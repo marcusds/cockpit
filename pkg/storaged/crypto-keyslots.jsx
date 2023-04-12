@@ -20,13 +20,14 @@
 import cockpit from "cockpit";
 import React from "react";
 
-import {
-    Card, CardBody, CardTitle, CardHeader, CardActions,
-    Checkbox, ClipboardCopy,
-    Form, FormGroup,
-    DataListItem, DataListItemRow, DataListItemCells, DataListCell, DataList,
-    TextContent, Text, TextVariants, TextList, TextListItem, TextInput as TextInputPF, Stack,
-} from "@patternfly/react-core";
+import { Card, CardActions, CardBody, CardHeader, CardTitle } from "@patternfly/react-core/dist/esm/components/Card/index.js";
+import { Checkbox } from "@patternfly/react-core/dist/esm/components/Checkbox/index.js";
+import { ClipboardCopy } from "@patternfly/react-core/dist/esm/components/ClipboardCopy/index.js";
+import { Form, FormGroup } from "@patternfly/react-core/dist/esm/components/Form/index.js";
+import { DataList, DataListCell, DataListItem, DataListItemCells, DataListItemRow } from "@patternfly/react-core/dist/esm/components/DataList/index.js";
+import { Text, TextContent, TextList, TextListItem, TextVariants } from "@patternfly/react-core/dist/esm/components/Text/index.js";
+import { TextInput as TextInputPF } from "@patternfly/react-core/dist/esm/components/TextInput/index.js";
+import { Stack } from "@patternfly/react-core/dist/esm/layouts/Stack/index.js";
 import { EditIcon, MinusIcon, PlusIcon } from "@patternfly/react-icons";
 
 import sha1 from "js-sha1";
@@ -44,7 +45,7 @@ import { StorageButton } from "./storage-controls.jsx";
 import { parse_options, unparse_options } from "./format-dialog.jsx";
 import { edit_config } from "./crypto-tab.jsx";
 
-import clevis_luks_passphrase_sh from "raw-loader!./clevis-luks-passphrase.sh";
+import clevis_luks_passphrase_sh from "./clevis-luks-passphrase.sh";
 
 const _ = cockpit.gettext;
 
@@ -55,7 +56,7 @@ function get_tang_adv(url) {
     return cockpit.spawn(["curl", "-sSf", url + "/adv"], { err: "message" })
             .then(JSON.parse)
             .catch(error => {
-                return cockpit.reject(error.toString().replace(/^curl: \([0-9]+\) /, ""));
+                return Promise.reject(error.toString().replace(/^curl: \([0-9]+\) /, ""));
             });
 }
 
@@ -201,7 +202,7 @@ export function existing_passphrase_fields(explanation) {
                   {
                       visible: vals => vals.needs_explicit_passphrase,
                       validate: val => !val.length && _("Passphrase cannot be empty"),
-                      explanation: explanation
+                      explanation
                   })
     ];
 }
@@ -378,8 +379,8 @@ function ensure_systemd_unit_enabled(steps, progress, name, package_name) {
     progress(cockpit.format(_("Enabling $0"), name));
     return cockpit.spawn(["systemctl", "is-enabled", name], { err: "message" })
             .catch((err, output) => {
-                if (err && output == "" && package_name) {
-                // We assume that installing the package will enable the unit.
+                if (err && (output == "" || output.trim() == "not-found") && package_name) {
+                    // We assume that installing the package will enable the unit.
                     return ensure_package_installed(steps, progress, package_name);
                 } else
                     return cockpit.spawn(["systemctl", "enable", name],
@@ -572,7 +573,7 @@ function edit_clevis_dialog(client, block, key) {
 }
 
 function add_or_update_tang(dlg, vals, block, url, adv, old_key, passphrase) {
-    return clevis_add(block, "tang", { url: url, adv: adv }, vals.passphrase || passphrase).then(() => {
+    return clevis_add(block, "tang", { url, adv }, vals.passphrase || passphrase).then(() => {
         if (old_key)
             return clevis_remove(block, old_key);
     })
@@ -643,9 +644,9 @@ const RemovePassphraseField = (tag, key, dev) => {
     }
 
     return {
-        tag: tag,
+        tag,
         title: null,
-        options: { validate: validate },
+        options: { validate },
         initial_value: "",
         bare: true,
 
@@ -693,7 +694,7 @@ function remove_passphrase_dialog(block, key) {
 
 const RemoveClevisField = (tag, key, dev) => {
     return {
-        tag: tag,
+        tag,
         title: null,
         options: { },
         initial_value: "",

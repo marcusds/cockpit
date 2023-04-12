@@ -9,7 +9,7 @@ import time
 # import Cockpit's machinery for test VMs and its browser test API
 import parent  # noqa: F401
 import packagelib
-from testlib import (Browser, Error, MachineCase, nondestructive, skipDistroPackage, skipImage,
+from testlib import (Browser, Error, MachineCase, nondestructive, skipDistroPackage, skipImage, skipOstree,
                      skipMobile, test_main, wait)
 
 from machine_core import ssh_connection
@@ -18,23 +18,24 @@ from lib.constants import TEST_OS_DEFAULT
 
 def getMaximumSpike(test, g_type, saturation, hour, minute):
     # only for minutes with events, which have SVG graphs
-    sel = f"#metrics-hour-{hour} div.metrics-minute[data-minute={minute}] div.metrics-data-{g_type} polygon"
+    sel = f"#metrics-hour-{hour} div.metrics-minute[data-minute={minute}] div.metrics-data-{g_type} div"
     if saturation:
         sel += ":nth-child(2)"
     else:
         sel += ":first-child"
 
     points = test.browser.attr(sel, "points")
-    test.assertNotIn("NaN", points)
-    xs = [float(x.split(",")[0]) for x in points.split()]
+    xs = [float(x.split(" ")[0].rstrip("%")) for x in points.split(", ") if x != ""]
+    test.assertNotIn("NaN", xs)
 
-    return max(xs)
+    return max(xs) / 100
 
 
 def getCompressedMinuteValue(test, g_type, saturation, hour, minute):
     # only for minutes without events, which only have bars
 
-    sel = f"#metrics-hour-{hour} div.metrics-minute[data-minute={minute}] div.metrics-data-{g_type} .compressed"
+    polygon_class = ".polygon-sat" if saturation else ".polygon-use"
+    sel = f"#metrics-hour-{hour} div.metrics-minute[data-minute={minute}] div.metrics-data-{g_type} .compressed{polygon_class}"
     m = re.search(r"--%s:\s*([0-9.]+);" % (saturation and "saturation" or "utilization"), test.browser.attr(sel, "style"))
     test.assertIsNotNone(m)
     return float(m.group(1))
@@ -156,7 +157,7 @@ class TestHistoryMetrics(MachineCase):
         })""")
         self.assertLessEqual(leading_empty, 4)
 
-    @skipImage("no PCP support", "fedora-coreos", "rhel4edge")
+    @skipOstree("no PCP support")
     def testBasic(self):
         b = self.browser
         m = self.machine
@@ -206,9 +207,9 @@ class TestHistoryMetrics(MachineCase):
         b.wait_visible(".metrics-label-graph:contains(Network)")
 
         # Change graph visibility
-        b.wait_visible(".metrics-events:contains('Network I/O spike')")
+        b.wait_visible(".metrics-events:contains('Network I/O')")
         b.set_checked("#column-visibility-option-network", False)
-        b.wait_not_present(".metrics-events:contains('Network I/O spike')")
+        b.wait_not_present(".metrics-events:contains('Network I/O')")
         b.wait_not_present(".metrics-label-graph:contains(Network)")
         b.set_checked("#column-visibility-option-network", True)
 
@@ -222,7 +223,7 @@ class TestHistoryMetrics(MachineCase):
         b.enter_page("/system")
         b.wait_visible('.system-information')
 
-    @skipImage("no PCP support", "fedora-coreos", "rhel4edge")
+    @skipOstree("no PCP support")
     def testEvents(self):
         b = self.browser
         m = self.machine
@@ -230,7 +231,12 @@ class TestHistoryMetrics(MachineCase):
         b.wait_timeout(60)
 
         def events_at(hour, minute):
-            return b.text(f"#metrics-hour-{hour} div.metrics-minute[data-minute={minute}] .metrics-events")
+            b.wait_visible(f"#metrics-hour-{hour}.metrics-hour-compressed")
+            b.click(f"#metrics-hour-{hour} button.metrics-events-expander")
+            events = b.text(f"#metrics-hour-{hour} div.metrics-minute[data-minute={minute}] .metrics-events")
+            b.click(f"#metrics-hour-{hour} button.metrics-events-expander")
+
+            return events
 
         #
         # Disks
@@ -258,7 +264,8 @@ class TestHistoryMetrics(MachineCase):
         self.assertLessEqual(getMaximumSpike(self, "disks", False, 1597662000000, 28), 0.6)
         self.assertGreaterEqual(getCompressedMinuteValue(self, "disks", False, 1597662000000, 29), 0.4)
         # recognized as event
-        self.assertIn("Disk I/O spike", events_at(1597662000000, 28))
+
+        self.assertIn("Disk I/O", events_at(1597662000000, 28))
 
         # No visible activity after that
         self.assertLessEqual(getCompressedMinuteValue(self, "disks", False, 1597662000000, 30), 0.01)
@@ -269,6 +276,26 @@ class TestHistoryMetrics(MachineCase):
 
         # Check that we don't show too much empty minutes in the first hour
         self.assertLessEqual(b.call_js_func("ph_count", ".metrics-data-cpu"), 35)
+
+        # Check metrics hour header in compressed and expanded mode
+        b.click("#metrics-hour-1597662000000 button.metrics-events-expander")
+        b.wait_in_text("#metrics-hour-1597662000000:not(.metrics-hour-compressed) .metrics-events-hour-header-expanded time", "1:00")
+        b.wait_in_text("#metrics-hour-1597662000000:not(.metrics-hour-compressed) .metrics-events-hour-header-expanded .spikes_count", "3 spikes")
+        b.wait_in_text("#metrics-hour-1597662000000:not(.metrics-hour-compressed) .metrics-events-hour-header-expanded .spikes_info", "1 Memory, 1 Disk I/O, 1 Network I/O")
+
+        b.assert_pixels(".metrics", "metrics-history-expanded-hour")
+
+        b.click("#metrics-hour-1597662000000 button.metrics-events-expander")
+        b.wait_in_text("#metrics-hour-1597662000000.metrics-hour-compressed", "1:00")
+        b.wait_in_text("#metrics-hour-1597662000000.metrics-hour-compressed .spikes_count", "3 spikes")
+        b.wait_in_text("#metrics-hour-1597662000000.metrics-hour-compressed .spikes_info", "1 Memory, 1 Disk I/O, 1 Network I/O")
+
+        b.assert_pixels(".metrics", "metrics-history-compressed-hour")
+
+        # Check that events are not visible for compressed hours
+        b.wait_not_present("#metrics-hour-1597662000000 div.metrics-minute[data-minute=28] .metrics-events")
+        b.click("#metrics-hour-1597662000000 button.metrics-events-expander")
+        b.wait_visible("#metrics-hour-1597662000000 div.metrics-minute[data-minute=28] .metrics-events")
 
         b.logout()
 
@@ -286,15 +313,15 @@ class TestHistoryMetrics(MachineCase):
         self.assertGreaterEqual(getMaximumSpike(self, "network", False, 1598950800000, 3), 0.5)
         self.assertGreaterEqual(getMaximumSpike(self, "network", False, 1598950800000, 4), 0.5)
         # recognized as event
-        self.assertIn("Network I/O spike", events_at(1598950800000, 3))
+        self.assertIn("Network I/O", events_at(1598950800000, 3))
         # but it's not a new event in minute 4
-        self.assertNotIn("Network I/O spike", events_at(1598950800000, 4))
+        self.assertNotIn("Network I/O", events_at(1598950800000, 4))
 
         # Followed by smaller spike
         self.assertGreaterEqual(getMaximumSpike(self, "network", False, 1598950800000, 5), 0.35)
         self.assertLessEqual(getMaximumSpike(self, "network", False, 1598950800000, 5), 0.5)
         # still not a new spike
-        self.assertNotIn("Network I/O spike", events_at(1598950800000, 5))
+        self.assertNotIn("Network I/O", events_at(1598950800000, 5))
 
         # Followed by virtually no data
         self.assertLessEqual(getCompressedMinuteValue(self, "network", False, 1598950800000, 6), 0.01)
@@ -304,8 +331,8 @@ class TestHistoryMetrics(MachineCase):
         self.assertGreaterEqual(getMaximumSpike(self, "cpu", False, 1598950800000, 4), 0.5)
         self.assertLessEqual(getMaximumSpike(self, "cpu", False, 1598950800000, 4), 0.55)
         self.assertGreaterEqual(getMaximumSpike(self, "cpu", False, 1598950800000, 5), 0.9)
-        self.assertIn("CPU spike", events_at(1598950800000, 2))
-        self.assertIn("CPU spike", events_at(1598950800000, 5))
+        self.assertIn("CPU", events_at(1598950800000, 2))
+        self.assertIn("CPU", events_at(1598950800000, 5))
 
         # Test CPU saturation - 3 spikes, each 2 minutes (medium, big, small)
         self.assertGreaterEqual(getMaximumSpike(self, "cpu", True, 1598950800000, 3), 0.5)
@@ -321,10 +348,10 @@ class TestHistoryMetrics(MachineCase):
         self.assertGreaterEqual(getCompressedMinuteValue(self, "cpu", True, 1598950800000, 8), 0.3)
         self.assertLessEqual(getCompressedMinuteValue(self, "cpu", True, 1598950800000, 8), 0.4)
 
-        self.assertNotIn("Load spike", events_at(1598950800000, 2))
-        self.assertIn("Load spike", events_at(1598950800000, 3))
-        self.assertNotIn("Load spike", events_at(1598950800000, 4))
-        self.assertIn("Load spike", events_at(1598950800000, 5))
+        self.assertNotIn("Load", events_at(1598950800000, 2))
+        self.assertIn("Load", events_at(1598950800000, 3))
+        self.assertNotIn("Load", events_at(1598950800000, 4))
+        self.assertIn("Load", events_at(1598950800000, 5))
 
         b.logout()
 
@@ -340,7 +367,7 @@ class TestHistoryMetrics(MachineCase):
 
         # basic RAM consumption after boot; it's still a network spike, thus event+SVG
         self.assertLessEqual(getMaximumSpike(self, "memory", False, 1600236000000, 44), 0.3)
-        self.assertNotIn("Memory spike", events_at(1600236000000, 44))
+        self.assertNotIn("Memory", events_at(1600236000000, 44))
         if have_swap:
             self.assertAlmostEqual(getMaximumSpike(self, "memory", True, 1600236000000, 44), 0)
             self.assertNotIn("Swap", events_at(1600236000000, 44))
@@ -359,11 +386,11 @@ class TestHistoryMetrics(MachineCase):
 
         # memory spike in :47
         self.assertGreater(getMaximumSpike(self, "memory", False, 1600236000000, 47), 0.6)
-        self.assertIn("Memory spike", events_at(1600236000000, 47))
+        self.assertIn("Memory", events_at(1600236000000, 47))
 
         # at :54 the machine is loaded to ~80% so no event even if elevated
         self.assertGreater(getCompressedMinuteValue(self, "memory", False, 1600236000000, 54), 0.8)
-        b.wait_text("#metrics-hour-1600236000000 div.metrics-minute[data-minute=54] .metrics-events", "")
+        b.wait_not_present("#metrics-hour-1600236000000 div.metrics-minute[data-minute=54] .metrics-events")
         if have_swap:
             self.assertAlmostEqual(getCompressedMinuteValue(self, "memory", True, 1600236000000, 54), 0.0)
 
@@ -385,7 +412,7 @@ class TestHistoryMetrics(MachineCase):
 
         b.select_PF4("#date-picker-select-toggle", "Wednesday, September 16, 2020")
         self.assertGreater(getMaximumSpike(self, "memory", False, 1600236000000, 51), 0.5)
-        self.assertIn("Memory spike", events_at(1600236000000, 51))
+        self.assertIn("Memory", events_at(1600236000000, 51))
 
         # Reload should keep the filters intact
         b.reload()
@@ -407,7 +434,7 @@ class TestHistoryMetrics(MachineCase):
             prepareArchive(m, "double_events.zip", 1602345600, "m1.cockpit.lan")
             login(self)
             b.wait_in_text(".metrics-heading", "CPU")
-            b.wait_in_text("#metrics-hour-1602334800000", "CPU spike")
+            b.wait_in_text("#metrics-hour-1602334800000", "CPU")
             self.assertTrue(self.browser.call_js_func("""(function () {
                 const min_events = document.getElementsByClassName("metrics-events");
                 return Array.from(min_events).every(l => {
@@ -426,22 +453,14 @@ class TestHistoryMetrics(MachineCase):
         # first check the "no logs found" case
         login(self)
         b.wait_in_text(".metrics-heading", "CPU")
-        b.click("#metrics-hour-1615197600000 div.metrics-minute[data-minute=39] .metrics-events button")
-        b.wait_in_text("#metrics-hour-1615197600000 div.metrics-minute[data-minute=39] .cockpit-log-panel", "No logs found")
-        b.click("button:contains('View detailed logs')")
-        b.enter_page("/system/logs")
-        # jumps to the right time with larger window and debug level
-        url = b.eval_js('window.location.hash')
-        self.assertIn("priority=debug", url)
-        self.assertIn("since=2021-3-8%2010%3A24%3A0", url)
-        self.assertIn("until=2021-3-8%2010%3A40%3A0", url)
-        b.go("/metrics")
+        b.click("#metrics-hour-1615197600000 button.metrics-events-expander")
+        b.wait_in_text("#metrics-hour-1615197600000 div.metrics-minute[data-minute=39] .metrics-events span.spikes_info", "Load")
 
         # Now add the journal
         # Journal was recorded on Fedora 33 and when trying to use it with older systemd it fails with:
         # `Journal file /var/log/journal/*/journal.journal uses an unsupported feature, ignoring file.`
 
-        if self.machine.image in ["centos-8-stream", "rhel-8-7", "rhel-8-8", "debian-stable"]:
+        if self.machine.image in ["centos-8-stream", "rhel-8-7", "rhel-8-8", "rhel-8-9", "debian-stable"]:
             return
 
         m.upload(["verify/files/metrics-archives/journal.journal.gz"], "/tmp")
@@ -451,7 +470,8 @@ class TestHistoryMetrics(MachineCase):
         b.enter_page("/metrics")
 
         b.wait_in_text(".metrics-heading", "CPU")
-        b.click("#metrics-hour-1615197600000 div.metrics-minute[data-minute=39] .metrics-events button")
+        b.click("#metrics-hour-1615197600000 button.metrics-events-expander")
+        b.click("#metrics-hour-1615197600000 div.metrics-minute[data-minute=39] .metrics-events button.spikes_info")
         b.wait_visible(".cockpit-log-message:contains('Created slice cockpittest.slice.')")
         b.wait_in_text(".cockpit-logline:first-child .cockpit-log-message", "cpu-piglet")
         b.click(".cockpit-logline:first-child .cockpit-log-message")
@@ -472,7 +492,7 @@ class TestHistoryMetrics(MachineCase):
         self.assertIn("until=2021-3-8%2010%3A39%3A45", url)
 
     @nondestructive
-    @skipImage("no PCP support", "fedora-coreos", "rhel4edge")
+    @skipOstree("no PCP support")
     def testNoDataEnable(self):
         b = self.browser
         m = self.machine
@@ -507,7 +527,7 @@ class TestHistoryMetrics(MachineCase):
         b.logout()
 
     @nondestructive
-    @skipImage("no PCP support", "fedora-coreos", "rhel4edge")
+    @skipOstree("no PCP support")
     def testNoDataFailed(self):
         b = self.browser
         m = self.machine
@@ -528,13 +548,11 @@ class TestHistoryMetrics(MachineCase):
 
         # Troubleshoot
         b.click(".pf-c-empty-state button.pf-m-link")
-        # FIXME: Services page is too slow
-        with b.wait_timeout(30):
-            b.enter_page("/system/services")
-            b.wait_in_text("#service-details", "pmlogger.service")
+        b.enter_page("/system/services")
+        b.wait_in_text("#service-details", "pmlogger.service")
 
     @nondestructive
-    @skipImage("no PCP support", "fedora-coreos", "rhel4edge")
+    @skipOstree("no PCP support")
     def testLoggerSettings(self):
         b = self.browser
         m = self.machine
@@ -568,7 +586,7 @@ class TestHistoryMetrics(MachineCase):
         self.assertEqual(m.execute("systemctl is-enabled pmlogger").strip(), "enabled")
 
     @nondestructive
-    @skipImage("no PCP support", "fedora-coreos", "rhel4edge")
+    @skipOstree("no PCP support")
     def testPmProxySettings(self):
         b = self.browser
         m = self.machine
@@ -752,6 +770,8 @@ class TestCurrentMetrics(MachineCase):
         self.addCleanup(self.machine.execute, "systemctl stop cockpittest.slice 2>/dev/null || true")
         self.addCleanup(self.machine.execute, "su - admin -c 'XDG_RUNTIME_DIR=/run/user/$(id -u admin) "
                                               "systemctl --user stop cockpittest.slice 2>/dev/null || true'")
+
+        self.busybox_image = self.machine.execute("podman images --format '{{.Repository}}' | grep busybox").strip()
         login(self)
 
     def testCPU(self):
@@ -807,7 +827,7 @@ class TestCurrentMetrics(MachineCase):
         m.execute("systemctl stop load-hog 2>/dev/null || true")  # ok to fail, as the command exits by itself
 
         container_name = "pod-cpu-hog"
-        m.execute(f"podman run --rm -d --name {container_name} quay.io/libpod/busybox /bin/dd if=/dev/urandom of=/dev/null")
+        m.execute(f"podman run --rm -d --name {container_name} {self.busybox_image} /bin/dd if=/dev/urandom of=/dev/null")
 
         container_sha = m.execute(f"podman inspect --format '{{{{.Id}}}}' {container_name}").strip()
         shortid = container_sha[:12]
@@ -827,7 +847,7 @@ class TestCurrentMetrics(MachineCase):
         # libpod-$containerid but as podman-3679.scope.
         if m.image != "centos-8-stream" and not m.image.startswith("rhel-8"):
             # copy images for user podman tests; podman insists on user session
-            m.execute("podman save quay.io/libpod/busybox | sudo -i -u admin podman load")
+            m.execute(f"podman save {self.busybox_image} | sudo -i -u admin podman load")
 
             # Test user containers
             admin_s = ssh_connection.SSHConnection(user="admin",
@@ -835,7 +855,7 @@ class TestCurrentMetrics(MachineCase):
                                                    ssh_port=m.ssh_port,
                                                    identity_file=m.identity_file)
             user_container_name = "user-cpu-hog"
-            admin_s.execute(f"podman run --rm -d --name {user_container_name} quay.io/libpod/busybox /bin/dd if=/dev/urandom of=/dev/null")
+            admin_s.execute(f"podman run --rm -d --name {user_container_name} {self.busybox_image} /bin/dd if=/dev/urandom of=/dev/null")
 
             container_sha = admin_s.execute(f"podman inspect --format '{{{{.Id}}}}' {user_container_name}").strip()
             shortid = container_sha[:12]
@@ -887,10 +907,13 @@ class TestCurrentMetrics(MachineCase):
         # Tctl (temp1_input) will be ignored
         m.write("/tmp/sensor-sys-class/hwmon/hwmon1/temp1_label", "Tctl")
         m.write("/tmp/sensor-sys-class/hwmon/hwmon1/temp1_input", "40000")
+        m.write("/tmp/sensor-sys-class/hwmon/hwmon1/temp1_max", "100000")
         m.write("/tmp/sensor-sys-class/hwmon/hwmon1/temp2_label", "Tccd1")
         m.write("/tmp/sensor-sys-class/hwmon/hwmon1/temp2_input", "35000")
+        m.write("/tmp/sensor-sys-class/hwmon/hwmon1/temp2_max", "100000")
         m.write("/tmp/sensor-sys-class/hwmon/hwmon1/temp3_label", "Tccd3")
         m.write("/tmp/sensor-sys-class/hwmon/hwmon1/temp3_input", "30000")
+        m.write("/tmp/sensor-sys-class/hwmon/hwmon1/temp3_max", "100000")
 
         b.logout()
         self.login_and_go("/metrics")
@@ -931,8 +954,10 @@ class TestCurrentMetrics(MachineCase):
         m.write("/tmp/sensor-sys-class/hwmon/hwmon1/name", "coretemp")
         m.write("/tmp/sensor-sys-class/hwmon/hwmon1/temp1_label", "Package id 0")
         m.write("/tmp/sensor-sys-class/hwmon/hwmon1/temp1_input", "60000")
+        m.write("/tmp/sensor-sys-class/hwmon/hwmon1/temp1_crit", "100000")
         m.write("/tmp/sensor-sys-class/hwmon/hwmon1/temp2_label", "Core 0")
         m.write("/tmp/sensor-sys-class/hwmon/hwmon1/temp2_input", "50000")
+        m.write("/tmp/sensor-sys-class/hwmon/hwmon1/temp2_crit", "100000")
 
         b.logout()
         self.login_and_go("/metrics")
@@ -966,7 +991,7 @@ class TestCurrentMetrics(MachineCase):
 
         # Test link to user services
         # older releases don't have CPU accounting enabled for user services
-        if m.image not in ["rhel-8-7", "rhel-8-8", "centos-8-stream"]:
+        if m.image not in ["rhel-8-7", "rhel-8-8", "rhel-8-9", "centos-8-stream"]:
             m.execute("su - admin -c 'XDG_RUNTIME_DIR=/run/user/$(id -u admin) systemd-run --user --collect --slice cockpittest -p CPUQuota=60% --unit cpu-userhog dd if=/dev/urandom of=/dev/null'")
             # user services are always running underneath user@1000.service, so these two will compete for row 1 or 2
             b.wait_in_text("table[aria-label='Top 5 CPU services'] tbody", "cpu-userhog")
@@ -1014,9 +1039,7 @@ BEGIN {{
         # table entries are links to Services page
         b.click("table[aria-label='Top 5 memory services'] tbody tr:nth-of-type(1) td[data-label='Service'] a span")
         b.enter_page("/system/services")
-        # FIXME: Services page is too slow
-        with b.wait_timeout(30):
-            b.wait_in_text("#path", "/mem-hog.service")
+        b.wait_in_text("#path", "/mem-hog.service")
         b.wait_in_text(".service-name", "memhog.sh")
 
         b.go("/metrics")
@@ -1051,7 +1074,7 @@ BEGIN {{
         container_name = "pod-mem-hog"
         # pipe to tail to keep the data in memory
         m.execute(f"""
-            podman run --rm -d --name {container_name} quay.io/libpod/busybox /bin/sh -c '
+            podman run --rm -d --name {container_name} {self.busybox_image} /bin/sh -c '
             head -c 300m /dev/zero | tail | sleep infinity'""")
 
         # It takes one re-render for the name lookup
@@ -1064,7 +1087,7 @@ BEGIN {{
         # libpod-$containerid but as podman-3679.scope.
         if m.image != "centos-8-stream" and not m.image.startswith("rhel-8"):
             # copy images for user podman tests; podman insists on user session
-            m.execute("podman save quay.io/libpod/busybox | sudo -i -u admin podman load")
+            m.execute(f"podman save {self.busybox_image} | sudo -i -u admin podman load")
 
             # Test user containers
             admin_s = ssh_connection.SSHConnection(user="admin",
@@ -1073,7 +1096,7 @@ BEGIN {{
                                                    identity_file=m.identity_file)
             user_container_name = "user-mem-hog"
             admin_s.execute(f"""
-                podman run --rm -d --name {user_container_name} quay.io/libpod/busybox /bin/sh -c '
+                podman run --rm -d --name {user_container_name} {self.busybox_image} /bin/sh -c '
                 head -c 300m /dev/zero | tail | sleep infinity'
             """)
 
@@ -1085,7 +1108,7 @@ BEGIN {{
 
         # Test link to user services
         # older releases don't have memory accounting enabled for user services
-        if m.image not in ["rhel-8-7", "rhel-8-8", "centos-8-stream"]:
+        if m.image not in ["rhel-8-7", "rhel-8-8", "rhel-8-9", "centos-8-stream"]:
             m.execute("su - admin -c 'XDG_RUNTIME_DIR=/run/user/$(id -u admin) systemd-run --user --collect --slice cockpittest --unit mem-userhog memhog.sh'")
             m.execute("while [ ! -e /tmp/hogged ]; do sleep 1; done")
             # user services are always running underneath user@1000.service, so these two will compete for row 1 or 2
@@ -1164,7 +1187,7 @@ BEGIN {{
         b.wait(lambda: progressValue(self, ".pf-c-progress[data-disk-usage-target='/var/cockpittest']") >= 90)
 
         # clicking on progress leads to the storage page
-        if m.image not in ["fedora-coreos", "rhel4edge"]:
+        if not m.ostree_image:
             self.assertTrue(b.is_present("#current-disks-usage button"))
             b.click(progress_sel)
             b.enter_page("/storage")
@@ -1185,7 +1208,7 @@ BEGIN {{
         b.wait_visible(progress_sel)
         self.assertFalse(b.is_present("#current-disks-usage button"))
 
-    @skipImage("no netcat on CoreOS", "fedora-coreos", "rhel4edge")
+    @skipOstree("no netcat on CoreOS")
     def testNetwork(self):
         b = self.browser
         m = self.machine
@@ -1224,7 +1247,7 @@ class TestMetricsPackages(packagelib.PackageCase):
         b = self.browser
         m = self.machine
 
-        if m.image in ["fedora-coreos", "rhel4edge"]:
+        if m.ostree_image:
             self.login_and_go("/metrics")
             b.wait_in_text(".pf-c-empty-state", "cockpit-pcp is missing")
             b.wait_not_present(".pf-c-empty-state button.pf-m-primary")
@@ -1337,7 +1360,7 @@ class TestMultiCPU(MachineCase):
         "0": {"cpus": 2}
     }
 
-    @skipImage("no PCP support", "fedora-coreos", "rhel4edge")
+    @skipOstree("no PCP support")
     def testCPUUsage(self):
         b = self.browser
         m = self.machine
@@ -1375,7 +1398,7 @@ class TestMultiCPU(MachineCase):
         b.wait(lambda: int(b.text("#current-cpu-usage .pf-c-progress__status").split()[-1].rstrip('%')) <= 70)
 
 
-@skipImage("no PCP support", "fedora-coreos", "rhel4edge")
+@skipOstree("no PCP support")
 @skipDistroPackage()
 @skipMobile()
 class TestGrafanaClient(MachineCase):
@@ -1451,8 +1474,8 @@ class TestGrafanaClient(MachineCase):
             # Select PCP redis, HTTP URL http://10.111.112.1:44322
             redis_url = 'http://10.111.112.1:44322'
             bg.open("/datasources/new")
-            bg.wait_visible("[aria-label='Add data source PCP Redis']")
-            bg.click("[aria-label='Add data source PCP Redis']")
+            bg.wait_visible("[aria-label='Add new data source PCP Redis']")
+            bg.click("[aria-label='Add new data source PCP Redis']")
             bg.set_input_text("input[placeholder='http://localhost:44322']", redis_url)
             bg.click("button:contains('Save &')")  # Save & [tT]est
             bg.wait_in_text(".page-body", "Data source is working")
@@ -1466,7 +1489,10 @@ class TestGrafanaClient(MachineCase):
 
             # Switch to "Dashboards" tab, import "Host Overview"
             bg.click(".page-header__tabs a[href$='/dashboards']")
-            bg.click("tr:contains('PCP Redis: Host Overview') button")
+            with bg.wait_timeout(60):
+                bg.wait_not_in_text(".page-header__title", "Loading")
+            bg.click("tr:contains('PCP Redis: Host Overview') button:contains('Import')")
+            bg.wait_visible("tr:contains('PCP Redis: Host Overview') button:contains('Re-import')")
 
             # .. and the dashboard name becomes clickable
             bg.click("a:contains('PCP Redis: Host Overview')")

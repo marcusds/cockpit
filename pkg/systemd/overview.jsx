@@ -24,11 +24,9 @@ import cockpit from "cockpit";
 
 import React from 'react';
 import { createRoot } from "react-dom/client";
-import {
-    Page, PageSection, PageSectionVariants,
-    Gallery,
-    Dropdown, DropdownItem, DropdownToggle, DropdownToggleAction, DropdownPosition,
-} from '@patternfly/react-core';
+import { Page, PageSection, PageSectionVariants } from "@patternfly/react-core/dist/esm/components/Page/index.js";
+import { Gallery } from "@patternfly/react-core/dist/esm/layouts/Gallery/index.js";
+import { Dropdown, DropdownItem, DropdownPosition, DropdownToggle, DropdownToggleAction } from "@patternfly/react-core/dist/esm/components/Dropdown/index.js";
 
 import { superuser } from "superuser";
 
@@ -41,6 +39,8 @@ import { SuperuserAlert } from './superuser-alert.jsx';
 import { SuperuserIndicator } from "../shell/superuser.jsx";
 import { ShutdownModal } from 'cockpit-components-shutdown.jsx';
 import { WithDialogs, DialogsContext } from "dialogs.jsx";
+
+import "./overview.scss";
 
 const _ = cockpit.gettext;
 

@@ -23,7 +23,7 @@ import time
 
 import parent  # noqa: F401
 from packagelib import PackageCase
-from testlib import nondestructive, skipDistroPackage, skipImage, test_main
+from testlib import nondestructive, skipDistroPackage, skipImage, skipOstree, test_main
 
 
 WAIT_SCRIPT = """
@@ -38,9 +38,7 @@ done
 """
 
 OSesWithoutTracer = ["debian-stable", "debian-testing", "ubuntu-2204", "ubuntu-stable", "fedora-coreos", "rhel4edge"]
-OSesWithoutKpatch = ["debian-stable", "debian-testing", "ubuntu-2204", "ubuntu-stable", "arch",
-                     "fedora-coreos", "rhel4edge", "fedora-36", "fedora-37", "fedora-38", "fedora-testing",
-                     "centos-8-stream", "centos-9-stream"]
+OSesWithoutKpatch = ["debian-*", "ubuntu-*", "arch", "fedora-*", "rhel4edge", "centos-*"]
 
 
 class NoSubManCase(PackageCase):
@@ -59,7 +57,7 @@ class NoSubManCase(PackageCase):
 
 
 @skipImage("TODO: Fails with 401 on our test runners", "arch")
-@skipImage("Image uses OSTree", "fedora-coreos", "rhel4edge")
+@skipOstree("Image uses OSTree")
 class TestUpdates(NoSubManCase):
 
     def setUp(self):
@@ -1038,7 +1036,7 @@ ExecStart=/usr/local/bin/{packageName}
         # error message visible
         b.wait_visible("#app .pf-c-page .pf-c-empty-state__body")
 
-        self.assertRegex(b.text("#app .pf-c-page .pf-c-empty-state__body .pf-c-content span:first-of-type"),
+        self.assertRegex(b.text("#app .pf-c-page .pf-l-stack .pf-c-code-block .pf-c-code-block__content .pf-c-code-block__pre .pf-c-code-block__code span:first-of-type"),
                          "missing|downloading|not.*available|No such file or directory|download library error")
 
         # not expecting any buttons
@@ -1079,7 +1077,7 @@ ExecStart=/usr/local/bin/{packageName}
         self.allow_journal_messages(".*")
 
         # error message visible
-        b.wait_in_text("#app .pf-c-page .pf-c-empty-state__body", "PackageKit crashed")
+        b.wait_in_text("#app .pf-c-page .pf-l-stack .pf-c-code-block__content", "PackageKit crashed")
 
     @nondestructive
     def testNoPackageKit(self):
@@ -1097,16 +1095,32 @@ ExecStart=/usr/local/bin/{packageName}
                            systemctl daemon-reload'''.format(system_service))
 
         m.start_cockpit()
-        b.login_and_go("/updates")
+        if os.environ.get("TEST_SCENARIO") != "pybridge":
+            # TODO: conditions not implemented on C bridge; once we drop it, drop this special case and
+            # enable the manifest documentation for conditions in doc/guide/packages.xml
+            self.assertIn("\nupdates", m.execute("cockpit-bridge --packages"))
+            b.login_and_go("/updates")
 
-        # error message present
-        b.wait_in_text(".pf-c-page__main-section .pf-c-empty-state__body", "PackageKit is not installed")
+            # error message present
+            b.wait_in_text(".pf-c-page__main-section .pf-l-stack .pf-c-code-block__content", "PackageKit is not installed")
 
-        # update status on front page should be invisible
-        b.go("/system")
-        b.enter_page("/system")
-        b.wait_text(self.update_text, "Loading available updates failed")
-        self.assertIn("exclamation", b.attr(self.update_icon, "class"))
+            # update status on front page should show error
+            b.go("/system")
+            b.enter_page("/system")
+            b.wait_text(self.update_text, "Loading available updates failed")
+            self.assertIn("exclamation", b.attr(self.update_icon, "class"))
+        else:
+            self.assertNotIn("\nupdates", m.execute("cockpit-bridge --packages"))
+            # should not appear in the menu at all
+            self.login_and_go(None)
+            b.wait_in_text("#host-apps .pf-m-current", "Overview")
+            self.assertNotIn("Updates", b.text("#host-apps .pf-m-current"))
+
+            # update status on front page should be invisible
+            b.go("/system")
+            b.enter_page("/system")
+            b.wait_visible(".system-health")
+            self.assertFalse(b.is_present(self.update_text))
 
     @skipDistroPackage()
     @nondestructive
@@ -1128,7 +1142,7 @@ ExecStart=/usr/local/bin/{packageName}
         # but applying updates is not; FIXME: this is a crappy UX
         b.click("#available-updates button#install-all")
         # error message visible
-        b.wait_in_text("#app .pf-c-empty-state__body", "authentication")
+        b.wait_in_text("#app .pf-c-code-block__content", "authentication")
 
         # page adjusts automatically to privilege change
         b.become_superuser()
@@ -1148,7 +1162,7 @@ ExecStart=/usr/local/bin/{packageName}
 
 
 @skipImage("TODO: Arch Linux has no cockpit-ws package, it's in cockpit", "arch")
-@skipImage("Image uses OSTree", "fedora-coreos", "rhel4edge")
+@skipOstree("Image uses OSTree")
 class TestWsUpdate(NoSubManCase):
     def testBasic(self):
         # The main case for this is that cockpit-ws itself gets upgraded, which
@@ -1255,9 +1269,8 @@ class TestKpatchInstall(NoSubManCase):
         m.execute("rpm -q kpatch kpatch-dnf")
 
 
-@skipImage("Image uses OSTree", "fedora-coreos", "rhel4edge")
-@skipImage("No subscriptions", "debian-stable", "debian-testing", "centos-8-stream",
-           "fedora-36", "fedora-37", "fedora-38", "fedora-testing", "ubuntu-2204", "ubuntu-stable", "arch")
+@skipOstree("Image uses OSTree")
+@skipImage("No subscriptions", "arch", "centos-*", "fedora-*", "debian-*", "ubuntu-*")
 class TestUpdatesSubscriptions(PackageCase):
     provision = {
         "0": {"address": "10.111.112.1/20", "dns": "10.111.112.1", "memory_mb": 512},
@@ -1716,7 +1729,7 @@ class TestAutoUpdatesInstall(NoSubManCase):
             b.wait_not_present("#settings")
             b.wait_not_present("#autoupdates-settings")
 
-    @skipImage("No supported auto update backend", "debian-stable", "debian-testing", "ubuntu-2204", "ubuntu-stable", "arch")
+    @skipImage("No supported auto update backend", "debian-*", "ubuntu-*", "arch")
     def testInstall(self):
         b = self.browser
         m = self.machine

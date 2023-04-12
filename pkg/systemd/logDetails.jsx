@@ -25,13 +25,12 @@ import React from 'react';
 import { EmptyStatePanel } from "cockpit-components-empty-state.jsx";
 import { AbrtLogDetails } from "./abrtLog.jsx";
 import { ExclamationCircleIcon } from '@patternfly/react-icons';
-import {
-    Breadcrumb, BreadcrumbItem, Button,
-    Card, CardBody, CardHeader, CardHeaderMain, CardTitle, CardActions,
-    DescriptionList, DescriptionListTerm, DescriptionListGroup, DescriptionListDescription,
-    Page, PageSection,
-    Gallery, GalleryItem
-} from '@patternfly/react-core';
+import { Breadcrumb, BreadcrumbItem } from "@patternfly/react-core/dist/esm/components/Breadcrumb/index.js";
+import { Button } from "@patternfly/react-core/dist/esm/components/Button/index.js";
+import { Card, CardActions, CardBody, CardHeader, CardHeaderMain, CardTitle } from "@patternfly/react-core/dist/esm/components/Card/index.js";
+import { DescriptionList, DescriptionListDescription, DescriptionListGroup, DescriptionListTerm } from "@patternfly/react-core/dist/esm/components/DescriptionList/index.js";
+import { Page, PageSection } from "@patternfly/react-core/dist/esm/components/Page/index.js";
+import { Gallery, GalleryItem } from "@patternfly/react-core/dist/esm/layouts/Gallery/index.js";
 
 const _ = cockpit.gettext;
 
@@ -132,14 +131,14 @@ export class LogEntry extends React.Component {
                         }
                     });
 
-                    this.setState({ entry: entry, loading: false, error: "", problemPath: path, abrtService: service });
+                    this.setState({ entry, loading: false, error: "", problemPath: path, abrtService: service });
                 })
-                .catch(err => this.setState({ entry: entry, loading: false, error: err.toString() }));
+                .catch(err => this.setState({ entry, loading: false, error: err.toString() }));
     }
 
     componentDidMount() {
         const cursor = cockpit.location.path[0];
-        journal.journalctl({ cursor: cursor, count: 1, follow: false })
+        journal.journalctl({ cursor, count: 1, follow: false })
                 .then(entries => {
                     if (entries.length >= 1 && entries[0].__CURSOR == cursor) {
                         if (entries[0].SYSLOG_IDENTIFIER === "abrt-notification" || entries[0]._SYSTEMD_UNIT === "abrt-notification")
@@ -149,7 +148,7 @@ export class LogEntry extends React.Component {
                     } else
                         this.setState({ entry: null, loading: false, error: _("Journal entry not found") });
                 })
-                .catch(error => this.setState({ entry: null, loading: false, error: error }));
+                .catch(error => this.setState({ entry: null, loading: false, error }));
     }
 
     componentWillUnmount() {

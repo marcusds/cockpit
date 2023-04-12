@@ -1,11 +1,3 @@
-# Defaults for standalone operation
-srcdir ?= .
-AM_DEFAULT_VERBOSITY ?= 0
-
-AM_V_GEN ?= $(AM_V_GEN_$(V))
-AM_V_GEN_ ?= $(AM_V_GEN_$(AM_DEFAULT_VERBOSITY))
-AM_V_GEN_0 ?= @echo "  GEN " $@;
-
 # The concrete set of linguas we are using
 LINGUAS = $(shell cat $(srcdir)/po/LINGUAS)
 
@@ -14,9 +6,9 @@ PO_LINGUAS = $(addprefix po/,$(LINGUAS))
 PO_INPUTS = $(addsuffix .po,$(PO_LINGUAS))
 
 # Extract translate attribute, Glade style, angular-gettext HTML translations
-po/cockpit.html.pot: package-lock.json
+po/cockpit.html.pot: $(srcdir)/package-lock.json
 	$(AM_V_GEN) mkdir -p $(dir $@) && \
-	$(srcdir)/pkg/lib/html2po -d $(srcdir) -o $@ \
+	$(srcdir)/pkg/lib/html2po.js -d $(srcdir) -o $@ \
 		$$(cd $(srcdir) && find pkg/ -name '*.html')
 
 # Extract cockpit style javascript translations
@@ -32,9 +24,9 @@ po/cockpit.js.pot:
 		$$( cd $(srcdir) && find pkg/ ! -name 'test-*' -name '*.js' -o -name '*.jsx') | \
 		sed '/^#/ s/, c-format//' > $@
 
-po/cockpit.manifest.pot: package-lock.json
+po/cockpit.manifest.pot: $(srcdir)/package-lock.json
 	$(AM_V_GEN) mkdir -p $(dir $@) && \
-	$(srcdir)/pkg/lib/manifest2po -d $(srcdir) -o $@ \
+	$(srcdir)/pkg/lib/manifest2po.js -d $(srcdir) -o $@ \
 		$$(cd $(srcdir) && find pkg/ -name 'manifest.json')
 
 po/cockpit.appstream.pot:

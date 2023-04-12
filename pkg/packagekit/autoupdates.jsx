@@ -19,11 +19,14 @@
 
 import cockpit from "cockpit";
 import React, { useState } from "react";
-import {
-    Alert, Button, Flex, FlexItem, Form, FormGroup,
-    FormSelect, FormSelectOption,
-    Modal, Radio, TimePicker,
-} from '@patternfly/react-core';
+import { Alert } from "@patternfly/react-core/dist/esm/components/Alert/index.js";
+import { Button } from "@patternfly/react-core/dist/esm/components/Button/index.js";
+import { Flex, FlexItem } from "@patternfly/react-core/dist/esm/layouts/Flex/index.js";
+import { Form, FormGroup } from "@patternfly/react-core/dist/esm/components/Form/index.js";
+import { FormSelect, FormSelectOption } from "@patternfly/react-core/dist/esm/components/FormSelect/index.js";
+import { Modal } from "@patternfly/react-core/dist/esm/components/Modal/index.js";
+import { Radio } from "@patternfly/react-core/dist/esm/components/Radio/index.js";
+import { TimePicker } from "@patternfly/react-core/dist/esm/components/TimePicker/index.js";
 
 import { install_dialog } from "cockpit-components-install-dialog.jsx";
 import { useDialogs } from "dialogs.jsx";
@@ -32,7 +35,7 @@ import { useInit } from "hooks";
 const _ = cockpit.gettext;
 
 function debug() {
-    if (window.debugging == "all" || window.debugging == "packagekit")
+    if (window.debugging == "all" || window.debugging?.includes("packagekit"))
         console.debug.apply(console, arguments);
 }
 
@@ -212,29 +215,18 @@ class DnfImpl extends ImplBase {
 
 // Returns a promise for instantiating "backend"; this will never fail, if
 // automatic updates are not supported, backend will be null.
-export function getBackend(forceReinit) {
+export function getBackend(packagekit_backend, forceReinit) {
     if (!getBackend.promise || forceReinit) {
         debug("getBackend() called first time or forceReinit passed, initializing promise");
         getBackend.promise = new Promise((resolve, reject) => {
-            cockpit.spawn(["bash", "-ec", "command -v zypper dnf apt | head -n1 | xargs --no-run-if-empty basename"], [], { err: "message" })
-                    .then(output => {
-                        output = output.trim();
-                        debug("getBackend(): detection finished, output", output);
-                        const backend = (output === "dnf") ? new DnfImpl() : undefined;
-                        // TODO: apt backend
-                        if (backend)
-                            backend.getConfig().then(() => resolve(backend));
-                        else
-                            resolve(null);
-                    })
-                    .catch(error => {
-                        // the detection shell script is supposed to always succeed
-                        console.error("automatic updates getBackend() detection failed:", error);
-                        resolve(null);
-                    });
+            const backend = (packagekit_backend === "dnf") ? new DnfImpl() : undefined;
+            // TODO: apt backend
+            if (backend)
+                backend.getConfig().then(() => resolve(backend));
+            else
+                resolve(null);
         });
     }
-
     return getBackend.promise;
 }
 
@@ -331,10 +323,10 @@ const AutoUpdatesDialog = ({ backend }) => {
         </Modal>);
 };
 
-export const AutoUpdates = ({ privileged }) => {
+export const AutoUpdates = ({ privileged, packagekit_backend }) => {
     const Dialogs = useDialogs();
     const [backend, setBackend] = useState(null);
-    useInit(() => getBackend().then(setBackend));
+    useInit(() => getBackend(packagekit_backend).then(setBackend));
 
     if (!backend)
         return null;
@@ -395,7 +387,7 @@ export const AutoUpdates = ({ privileged }) => {
                                 if (!backend.installed) {
                                     install_dialog(backend.packageName)
                                             .then(() => {
-                                                getBackend(true).then(b => {
+                                                getBackend(packagekit_backend, true).then(b => {
                                                     setBackend(b);
                                                     Dialogs.show(<AutoUpdatesDialog backend={b} />);
                                                 });

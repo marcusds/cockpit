@@ -71,9 +71,7 @@ class SourceDirectory(PodmanTemporaryDirectory):
         else:
             opts = []
 
-        opts.extend(f'--recurse-submodule={name}' for name in args.submodule)
-
-        git('clone', *opts, '.', self.name)
+        git('clone', '--recurse-submodule=modules/*', *opts, '.', self.name)
 
         if not args.head and not args.branch:
             if stash := git_output('stash', 'create'):
@@ -82,11 +80,6 @@ class SourceDirectory(PodmanTemporaryDirectory):
 
         if not args.no_node_modules:
             run([f'{self.name}/tools/node-modules', 'checkout'], check=True)
-
-            if args.wait:
-                run([f'{self.name}/tools/webpack-jumpstart', '--wait'], check=True)
-            elif not args.no_jumpstart:
-                run([f'{self.name}/tools/webpack-jumpstart', '--partial'], check=False)
 
 
 class ResultsDirectory(PodmanTemporaryDirectory):
@@ -117,9 +110,6 @@ def main():
     group.add_argument('--entrypoint', metavar='CMD', help="Provide the --entrypoint flag to podman")
     group.add_argument('--workdir', help="Provide the --workdir flag to podman")
 
-    group = parser.add_argument_group(title='Clone options')
-    group.add_argument('--submodule', action='append', default=[], help='Check out this submodule')
-
     group = parser.add_argument_group(title='What to build').add_mutually_exclusive_group()
     group.add_argument('--head', action='store_true', help='Build the HEAD commit')
     group.add_argument('-b', dest='branch', metavar='NAME', help='Build the named branch or tag')
@@ -129,10 +119,6 @@ def main():
     group = parser.add_argument_group(title='Preparation').add_mutually_exclusive_group()
     group.add_argument('--no-node-modules', action='store_true',
                        help='Disable checking out node_modules/ during preparation')
-    group.add_argument('--no-jumpstart', action='store_true',
-                       help='Disable webpack jumpstart during preparation')
-    group.add_argument('--wait', action='store_true',
-                       help='Use --wait argument with webpack-jumpstart')
 
     group = parser.add_argument_group(title='Command to run').add_mutually_exclusive_group()
     group.add_argument('-c', metavar='SCRIPT', dest='script', help="Run the provided shell script")

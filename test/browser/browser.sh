@@ -26,15 +26,23 @@ rpm -q cockpit-system
 # we don't need the H.264 codec, and it is sometimes not available (rhbz#2005760)
 dnf install --disablerepo=fedora-cisco-openh264 -y --setopt=install_weak_deps=False firefox
 
+# nodejs 10 is too old for current Cockpit test API
+if grep -q platform:el8 /etc/os-release; then
+    dnf module switch-to -y nodejs:16
+fi
+
 # HACK: setroubleshoot-server crashes/times out randomly (breaking TestServices),
 # and is hard to disable as it does not use systemd
 if rpm -q setroubleshoot-server; then
     dnf remove -y --noautoremove setroubleshoot-server
 fi
 
-if grep -q 'ID=.*fedora' /etc/os-release; then
-    # required by TestLogin.testBasic, but tcsh is not available in CentOS/RHEL
+if grep -q 'ID=.*fedora' /etc/os-release && [ "$PLAN" = "basic" ]; then
+    # Fedora-only packages which are not available in CentOS/RHEL
+    # required by TestLogin.testBasic
     dnf install -y tcsh
+    # required by TestJournal.testAbrt*
+    dnf install -y abrt abrt-addon-ccpp reportd libreport-plugin-bugzilla libreport-fedora
 fi
 
 if grep -q 'ID=.*rhel' /etc/os-release; then

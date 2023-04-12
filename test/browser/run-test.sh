@@ -118,18 +118,13 @@ if [ "$PLAN" = "basic" ]; then
     # PCI devices list is not predictable
     EXCLUDES="$EXCLUDES TestSystemInfo.testHardwareInfo"
 
-    # No ABRT in CentOS/RHEL, thus not a test dependency
-    EXCLUDES="$EXCLUDES
-              TestJournal.testAbrtDelete
-              TestJournal.testAbrtReportCancel
-              TestJournal.testAbrtReport
-              TestJournal.testAbrtReportNoReportd
-              TestJournal.testAbrtSegv
-              "
-
-    # no cockpit-tests package in RHEL 8
-    if [ "${TEST_OS#rhel-8}" != "$TEST_OS" ]; then
+    if [ "${TEST_OS#rhel-8}" != "$TEST_OS" ] || [ "${TEST_OS#centos-8}" != "$TEST_OS" ]; then
+        # no cockpit-tests package in RHEL 8
         EXCLUDES="$EXCLUDES TestLogin.testSELinuxRestrictedUser"
+
+        # fails to start second browser, timing out on http://127.0.0.1:{cdp_port}/json/list
+        # impossible to debug without access to the infra
+        EXCLUDES="$EXCLUDES TestAccounts.testUserPasswords"
     fi
 
     # These don't test more external APIs
@@ -156,6 +151,9 @@ if [ "$PLAN" = "basic" ]; then
               TestSystemInfo.testMotd
               TestSystemInfo.testShutdownStatus
 
+              TestJournal.testAbrtDelete
+              TestJournal.testAbrtReportNoReportd
+              TestJournal.testAbrtReportCancel
               TestJournal.testBinary
               TestJournal.testNoMessage
 
@@ -170,6 +168,7 @@ if [ "$PLAN" = "basic" ]; then
               TestServices.testRelationshipsUser
               TestServices.testResetFailed
               TestServices.testTransientUnits
+              TestServices.testUnprivileged
               "
 fi
 

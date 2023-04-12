@@ -19,7 +19,8 @@
 
 import React from "react";
 import PropTypes from "prop-types";
-import { Modal, Button } from "@patternfly/react-core";
+import { Modal } from "@patternfly/react-core/dist/esm/components/Modal/index.js";
+import { Button } from "@patternfly/react-core/dist/esm/components/Button/index.js";
 import { Terminal as Term } from "xterm";
 import { CanvasAddon } from 'xterm-addon-canvas';
 
@@ -162,8 +163,8 @@ export class Terminal extends React.Component {
         this.terminal.resize(cols, rows);
         this.props.channel.control({
             window: {
-                rows: rows,
-                cols: cols
+                rows,
+                cols
             }
         });
     }
@@ -269,7 +270,7 @@ export class Terminal extends React.Component {
 
     connectChannel() {
         const channel = this.props.channel;
-        if (channel && channel.valid) {
+        if (channel?.valid) {
             channel.addEventListener('message', this.onChannelMessage.bind(this));
             channel.addEventListener('close', this.onChannelClose.bind(this));
         }

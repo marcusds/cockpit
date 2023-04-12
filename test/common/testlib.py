@@ -22,6 +22,7 @@ from time import sleep
 import argparse
 import base64
 import errno
+import fnmatch
 import os
 import shutil
 import socket
@@ -41,6 +42,8 @@ from typing import Any, Callable, Dict, List, Optional, Union
 
 import testvm
 import cdp
+
+from lib.constants import OSTREE_IMAGES
 
 from lcov import write_lcov
 
@@ -71,6 +74,7 @@ __all__ = (
     'skipImage',
     'skipDistroPackage',
     'skipMobile',
+    'skipOstree',
     'skipBrowser',
     'skipPackage',
     'todo',
@@ -209,10 +213,7 @@ class Browser:
             self.layouts = [layout for layout in self.layouts if layout["theme"] != "dark"]
         self.current_layout = None
 
-    def title(self):
-        return self.cdp.eval('document.title')
-
-    def open(self, href: str, cookie: Optional[str] = None, tls: bool = False):
+    def open(self, href: str, cookie: Optional[Dict[str, str]] = None, tls: bool = False):
         """Load a page into the browser.
 
         :param href: the path of the Cockpit page to load, such as "/users". Either PAGE or URL needs to be given.
@@ -342,7 +343,7 @@ class Browser:
                 return c
         return None
 
-    def go(self, hash: str, host: str = "localhost"):
+    def go(self, hash: str):
         self.call_js_func('ph_go', hash)
 
     def mouse(self, selector: str, type: str, x: int = 0, y: int = 0, btn: int = 0, ctrlKey: bool = False, shiftKey: bool = False, altKey: bool = False, metaKey: bool = False):
@@ -371,7 +372,7 @@ class Browser:
     def mousedown(self, selector: str):
         self.mouse(selector + ":not([disabled]):not([aria-disabled=true])", "mousedown", 0, 0, 0)
 
-    def val(self, selector):
+    def val(self, selector: str):
         """Get the value attribute of a selector.
 
         :param selector: the selector to get the value of
@@ -458,7 +459,7 @@ class Browser:
         else:
             self._key_press_firefox(keys, modifiers, use_ord)
 
-    def _key_press_chromium(self, keys, modifiers=0, use_ord=False):
+    def _key_press_chromium(self, keys: str, modifiers: int = 0, use_ord=False):
         for key in keys:
             args = {"type": "keyDown", "modifiers": modifiers}
 
@@ -476,7 +477,7 @@ class Browser:
             args["type"] = "keyUp"
             self.cdp.invoke("Input.dispatchKeyEvent", **args)
 
-    def _key_press_firefox(self, keys, modifiers=0, use_ord=False):
+    def _key_press_firefox(self, keys: str, modifiers: int = 0, use_ord: bool = False):
         # https://github.com/GoogleChrome/puppeteer/blob/master/lib/USKeyboardLayout.js
         keyMap = {
             8: "Backspace",   # Backspace key
@@ -514,7 +515,7 @@ class Browser:
         else:
             self.wait_text(f"{selector} .pf-c-select__toggle-text", value)
 
-    def set_input_text(self, selector, val, append=False, value_check=True, blur=True):
+    def set_input_text(self, selector: str, val: str, append: bool = False, value_check: bool = True, blur: bool = True):
         self.focus(selector)
         if not append:
             self.key_press("a", 2)  # Ctrl + a
@@ -1397,22 +1398,18 @@ class MachineCase(unittest.TestCase):
         test_method = getattr(self.__class__, self._testMethodName)
         return get_decorator(test_method, self.__class__, "nondestructive")
 
-    def is_devel_build(self):
+    def is_devel_build(self) -> bool:
         return os.environ.get('NODE_ENV') == 'development'
 
-    def disable_preload(self, *packages):
+    def disable_preload(self, *packages, machine=None):
+        if machine is None:
+            machine = self.machine
         for pkg in packages:
-            path = "/usr/share/cockpit/%s" % pkg
-            if self.file_exists(path):
-                if self.machine.ostree_image:
-                    # get a writable directory
-                    self.restore_dir(path)
-                self.write_file("%s/override.json" % path, '{ "preload": [ ] }')
+            machine.write(f"/etc/cockpit/{pkg}.override.json", '{ "preload": [ ] }')
 
-    def enable_preload(self, package, *pages):
-        path = "/usr/share/cockpit/%s" % package
-        if self.file_exists(path):
-            self.write_file(path + '/override.json', '{ "preload": [%s]}' % ', '.join('"{0}"'.format(page) for page in pages))
+    def enable_preload(self, package: str, *pages: str):
+        pages_str = ', '.join(f'"{page}"' for page in pages)
+        self.machine.write(f"/etc/cockpit/{package}.override.json", f'{{ "preload": [ {pages_str} ] }}')
 
     def system_before(self, version):
         try:
@@ -1585,7 +1582,6 @@ class MachineCase(unittest.TestCase):
             # on OSTree we don't get "web console" sessions with the cockpit/ws container; just SSH; but also, some tests start
             # admin sessions without Cockpit
             self.machine.execute("""for u in $(loginctl --no-legend list-users  | awk '{ if ($2 != "root") print $1 }'); do
-                                        systemctl stop user@$u.service 2>/dev/null || true
                                         loginctl terminate-user $u 2>/dev/null || true
                                         loginctl kill-user $u 2>/dev/null || true
                                         pkill -9 -u $u || true
@@ -1594,22 +1590,27 @@ class MachineCase(unittest.TestCase):
                                         rm -rf /run/user/$u
                                     done""")
 
-            # Restart logind to mop up empty "closing" sessions
-            self.machine.execute("systemctl restart systemd-logind")
-
             # Terminate all other Cockpit sessions
             sessions = self.machine.execute("loginctl --no-legend list-sessions | awk '/web console/ { print $1 }'").strip().split()
             for s in sessions:
                 # Don't insist that terminating works, the session might be gone by now.
                 self.machine.execute(f"loginctl kill-session {s} || true; loginctl terminate-session {s} || true")
 
-                # Wait for it to be gone
+            # Restart logind to mop up empty "closing" sessions
+            self.machine.execute("systemctl restart systemd-logind")
+
+            # Wait for sessions to be gone
+            sessions = self.machine.execute("loginctl --no-legend list-sessions | awk '/web console/ { print $1 }'").strip().split()
+            for s in sessions:
                 try:
                     m.execute(f"while loginctl show-session {s}; do sleep 1; done", timeout=30)
                 except RuntimeError:
                     # show the status in debug logs, to see what's wrong
                     m.execute(f"loginctl session-status {s} >&2")
                     raise
+
+            # terminate all systemd user services for users who are not logged in
+            self.machine.execute("systemctl stop user@*.service")
 
         self.addCleanup(terminate_sessions)
 
@@ -1623,11 +1624,15 @@ class MachineCase(unittest.TestCase):
                 self.check_pixel_tests()
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
-    def login_and_go(self, path=None, user=None, host=None, superuser=True, urlroot=None, tls=False, enable_root_login=False):
+    def login_and_go(self, path: Optional[str] = None, user: Optional[str] = None, host: Optional[str] = None,
+                     superuser: bool = True, urlroot: Optional[str] = None, tls: bool = False,
+                     enable_root_login: bool = False):
         if enable_root_login:
             self.enable_root_login()
         self.machine.start_cockpit(tls=tls)
-        self.browser.login_and_go(path, user=user, host=host, superuser=superuser, urlroot=urlroot, tls=tls)
+        # first load after starting cockpit tends to take longer, due to on-demand service start
+        with self.browser.wait_timeout(30):
+            self.browser.login_and_go(path, user=user, host=host, superuser=superuser, urlroot=urlroot, tls=tls)
 
     # List of allowed journal messages during tests; these need to match the *entire* message
     default_allowed_messages = [
@@ -1701,6 +1706,7 @@ class MachineCase(unittest.TestCase):
         r"#1\) Respect the privacy of others.",
         r"#2\) Think before you type.",
         r"#3\) With great power comes great responsibility.",
+        "For security reasons, the password you type will not be visible",
 
         # starting out with empty PCP logs and pmlogger not running causes these metrics channel messages
         "pcp-archive: no such metric: .*: Unknown metric name",
@@ -1719,7 +1725,7 @@ class MachineCase(unittest.TestCase):
 
     default_allowed_console_errors += os.environ.get("TEST_ALLOW_BROWSER_ERRORS", "").split(",")
 
-    def allow_journal_messages(self, *patterns):
+    def allow_journal_messages(self, *patterns: str):
         """Don't fail if the journal contains a entry completely matching the given regexp"""
         for p in patterns:
             self.allowed_messages.append(p)
@@ -1792,12 +1798,33 @@ class MachineCase(unittest.TestCase):
 
         # HACK: pybridge bugs
         if os.environ.get("TEST_SCENARIO") == "pybridge":
+            # https://github.com/cockpit-project/cockpit/issues/18386
             self.allowed_messages += [
                 "asyncio-ERROR: Task was destroyed but it is pending!",
                 "task:.*Task pending.*cockpit/channels/dbus.py.*"]
 
-            # Python 3.11 traceback annotation
-            self.allowed_messages.append(r"\s*\^+\s*")
+            # happens fairly reliably with TestConnection.testTls and TestHistoryMetrics.testEvents
+            self.allowed_messages += [
+                r'asyncio-ERROR: Exception in callback None\(\)',
+                r'handle: <Handle cancelled>',
+                r'Traceback \(most recent call last\):',
+                r'File "/usr/lib64/python3.6/asyncio/events.py", line .*, in _run',
+                r'self._callback\(\*self._args\)',
+                r'File "/usr/local/lib64/python3.6/site-packages/cockpit/transports.py", line .*, in _read_ready',
+                r'self._protocol.data_received\(data\)',
+                r'File "/usr/local/lib64/python3.6/site-packages/cockpit/protocol.py", line .*, in data_received',
+                r'result = self.consume_one_frame\(self.buffer\)',
+                r'File "/usr/local/lib64/python3.6/site-packages/cockpit/protocol.py", line .*, in consume_one_frame',
+                r'self.frame_received.*',
+                r'File "/usr/local/lib64/python3.6/site-packages/cockpit/protocol.py", line .*, in frame_received',
+                r'self.channel_control_received\(channel, command, message\)',
+                r'File "/usr/local/lib64/python3.6/site-packages/cockpit/peer.py", line .*, in channel_control_received',
+                r'self.send_channel_control.*message.*',
+                r'File "/usr/local/lib64/python3.6/site-packages/cockpit/router.py", line .*, in send_channel_control',
+                r'self.router.drop_channel\(channel\)',
+                r'File "/usr/local/lib64/python3.6/site-packages/cockpit/router.py", line .*, in drop_channel',
+                r'assert channel in self.open_channels, \(self.open_channels, channel\)',
+                r"AssertionError: \({}, '.*'\)"]
 
         messages = machine.journal_messages(matches, 6, cursor=cursor)
 
@@ -1924,7 +1951,7 @@ class MachineCase(unittest.TestCase):
         # aXe triggers that *shrug*
         self.allow_journal_messages("received invalid message without channel prefix")
 
-    def snapshot(self, title, label=None):
+    def snapshot(self, title: str, label: Optional[str] = None):
         """Take a snapshot of the current screen and save it as a PNG.
 
         Arguments:
@@ -1947,7 +1974,7 @@ class MachineCase(unittest.TestCase):
                 sys.stderr.write("Unexpected exception in copy_js_log():\n")
                 sys.stderr.write(traceback.format_exc())
 
-    def copy_journal(self, title, label=None):
+    def copy_journal(self, title: str, label: Optional[str] = None):
         for name, m in self.machines.items():
             if m.ssh_reachable:
                 log = "%s-%s-%s.log.gz" % (label or self.label(), m.label, title)
@@ -2091,6 +2118,17 @@ class MachineCase(unittest.TestCase):
         if not self.machine.ostree_image and self.file_exists(disallowed_conf):
             self.sed_file('/root/d', disallowed_conf)
 
+    def setup_provisioned_hosts(self, disable_preload: bool = False):
+        """Setup provisioned hosts for testing
+
+        This sets the hostname of all machines to the name given in the
+        provision dictionary and optionally disabled preload.
+        """
+        for name, m in self.machines.items():
+            m.execute(f"hostnamectl set-hostname {name}")
+            if disable_preload:
+                self.disable_preload("packagekit", "playground", "systemd", machine=m)
+
 
 ###########################
 # Global helper functions
@@ -2151,7 +2189,13 @@ def skipBrowser(reason: str, *args: str):
 
 
 def skipImage(reason: str, *args: str):
-    if testvm.DEFAULT_IMAGE in args:
+    if any(fnmatch.fnmatch(testvm.DEFAULT_IMAGE, arg) for arg in args):
+        return unittest.skip("{0}: {1}".format(testvm.DEFAULT_IMAGE, reason))
+    return lambda testEntity: testEntity
+
+
+def skipOstree(reason: str):
+    if testvm.DEFAULT_IMAGE in OSTREE_IMAGES:
         return unittest.skip("{0}: {1}".format(testvm.DEFAULT_IMAGE, reason))
     return lambda testEntity: testEntity
 
@@ -2223,7 +2267,7 @@ def todoPybridge(reason=None, flaky=False):
     return lambda testEntity: testEntity
 
 
-def timeout(seconds):
+def timeout(seconds: str):
     """Change default test timeout of 600s, for long running tests
 
     Can be applied to an individual test method or the entire class. This only

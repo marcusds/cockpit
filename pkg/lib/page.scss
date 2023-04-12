@@ -2,7 +2,6 @@
 @use "@patternfly/patternfly/patternfly-theme-dark.scss";
 @use "./patternfly/patternfly-4-overrides.scss";
 @import "global-variables";
-@import "@patternfly/patternfly/components/Page/page.scss";
 
 /* Globally resize headings */
 h1 {
@@ -23,7 +22,7 @@ h4 {
 
 // Only apply a custom font size when a heading does NOT have a PF4 class
 h1, h2, h3, h4 {
-  &:not([class*="pf-"]) {
+  &:not([class*="pf-"]):not([data-pf-content="true"]) {
     font-size: var(--ct-heading-font-size);
   }
 }

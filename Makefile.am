@@ -6,26 +6,39 @@ noinst_DATA =
 noinst_LIBRARIES =
 noinst_PROGRAMS =
 
+# See https://www.gnu.org/software/make/manual/html_node/Force-Targets.html
+FORCE:
+
+# -----------------------------------------------------------------------------
+#  node_modules/package-lock.json dependency
+
+V_NODE_MODULES = $(V_NODE_MODULES_$(V))
+V_NODE_MODULES_ = $(V_NODE_MODULES_$(AM_DEFAULT_VERBOSITY))
+V_NODE_MODULES_0 = @V=0
+
+# We want tools/node-modules to run every time package-lock.json is requested
+$(srcdir)/package-lock.json: FORCE
+	$(V_NODE_MODULES) $(srcdir)/tools/node-modules make_package_lock_json
+
 # -----------------------------------------------------------------------------
 #  make dist
 
 EXTRA_DIST = README.md
 CLEANFILES += cockpit-*.tar.xz
 
-# We override distdir for two reasons:
-#  - we need to make sure DISTFILES is built before calling `make distdir-am`
-#    to ensure that the Makefile.deps from the webpack build are available
-#  - we want to dist all files in tools/ and test/ without explicitly listing
+# We override distdir as we want to dist some git-tracked files and dist/ without explicitly listing.
+# The spec also gets patched to declare bundled NPM dependencies.
 EXTRA_DIST += $(EXTRA_FILES)
 distdir: $(DISTFILES)
 	@if [ -e '$(srcdir)/.git' ]; then \
-		git -C '$(srcdir)' ls-files -x test/reference .fmf plans test tools > .extra_dist.tmp && \
+		git -C '$(srcdir)' ls-files -x test/reference .fmf plans pkg test tools > .extra_dist.tmp && \
 		mv .extra_dist.tmp '$(srcdir)/.extra_dist'; fi
 	$(MAKE) $(AM_MAKEFLAGS) distdir-am EXTRA_FILES="$$(tr '\n' ' ' < $(srcdir)/.extra_dist) .extra_dist"
 	sed -i "s/[@]VERSION@/$(VERSION)/" "$(distdir)/src/client/org.cockpit_project.CockpitClient.metainfo.xml"
-	sed -i "/^Version:/ s/0/$(VERSION)/" "$(distdir)/tools/cockpit.spec"
+	$(srcdir)/tools/fix-spec $(distdir)/tools/cockpit.spec $(VERSION)
 	sed -i "/^pkgver=/ s/0/$(VERSION)/" "$(distdir)/tools/arch/PKGBUILD"
 	sed -i "1 s/0/$(VERSION)/" "$(distdir)/tools/debian/changelog"
+	cp -r "$(srcdir)/dist" "$(distdir)"
 	$(srcdir)/tools/adjust-distdir-timestamps "$(distdir)"
 	@echo '  DIST     $(DIST_ARCHIVES)'
 
@@ -43,7 +56,7 @@ $(distdir)/configure: $(distdir)/version.m4
 
 # Various downstream packaging assets
 dist-hook: $(distdir)/tools/debian/copyright
-$(distdir)/tools/debian/copyright:
+$(distdir)/tools/debian/copyright: $(DIST_STAMP)
 	$(AM_V_GEN) NODE_ENV=$(NODE_ENV) $(srcdir)/tools/build-debian-copyright > $@
 
 DISTCHECK_CONFIGURE_FLAGS = --enable-prefix-only
@@ -52,7 +65,7 @@ DISTCHECK_CONFIGURE_FLAGS = --enable-prefix-only
 distcheck-hook::
 	find $(distdir) -name '*.metainfo.xml' -o -name '*.appdata.xml' | xargs appstream-util validate --nonet
 
-# validate that we don't bundle fonts in webpacks
+# validate that we don't bundle the embedded patternfly font files, we use them from /static/fonts/
 distcheck-hook::
 	! grep --color=auto -rn "\.\./fonts/OpenSans\|fonts/.*eot\|truetype" $(distdir)/dist
 
@@ -67,6 +80,9 @@ clean-local::
 	find $(srcdir) -name '*.pyc' -delete
 
 # required for running unit and integration tests; commander and ws are deps of chrome-remote-interface
+node_modules/%: $(srcdir)/package-lock.json
+	@true
+
 EXTRA_DIST += \
 	node_modules/chrome-remote-interface \
 	node_modules/commander \

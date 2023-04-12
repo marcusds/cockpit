@@ -18,20 +18,23 @@
  */
 import cockpit from "cockpit";
 import React, { useState } from "react";
-import {
-    Button, DatePicker,
-    Flex,
-    Form, FormGroup,
-    Popover,
-    Select, SelectOption, SelectVariant,
-    Spinner, TimePicker
-} from '@patternfly/react-core';
+import { Button } from "@patternfly/react-core/dist/esm/components/Button/index.js";
+import { DatePicker } from "@patternfly/react-core/dist/esm/components/DatePicker/index.js";
+import { Flex, FlexItem } from "@patternfly/react-core/dist/esm/layouts/Flex/index.js";
+import { Form, FormGroup } from "@patternfly/react-core/dist/esm/components/Form/index.js";
+import { Popover } from "@patternfly/react-core/dist/esm/components/Popover/index.js";
+import { Select, SelectOption, SelectVariant } from "@patternfly/react-core/dist/esm/components/Select/index.js";
+import { Spinner } from "@patternfly/react-core/dist/esm/components/Spinner/index.js";
+import { TimePicker } from "@patternfly/react-core/dist/esm/components/TimePicker/index.js";
+import { TextInput } from "@patternfly/react-core/dist/esm/components/TextInput/index.js";
 import { CloseIcon, ExclamationCircleIcon, InfoCircleIcon, PlusIcon } from "@patternfly/react-icons";
 import { show_modal_dialog } from "cockpit-components-dialog.jsx";
 import { useObject, useEvent } from "hooks.js";
 
 import * as service from "service.js";
 import * as timeformat from "timeformat.js";
+import * as python from "python.js";
+import get_timesync_backend_py from "./get-timesync-backend.py";
 
 import { superuser } from "superuser.js";
 
@@ -69,8 +72,10 @@ export function ServerTime() {
 
     const timedate1_service = service.proxy("dbus-org.freedesktop.timedate1.service");
     const timesyncd_service = service.proxy("systemd-timesyncd.service");
+    const chronyd_service = service.proxy("chronyd.service");
 
     timesyncd_service.addEventListener("changed", emit_changed);
+    chronyd_service.addEventListener("changed", emit_changed);
 
     /*
      * The time we return from here as its UTC time set to the
@@ -102,7 +107,7 @@ export function ServerTime() {
     self.wait = function wait() {
         if (remote_offset === null)
             return self.update();
-        return cockpit.resolve();
+        return Promise.resolve();
     };
 
     self.update = function update() {
@@ -232,7 +237,10 @@ export function ServerTime() {
         };
 
         // flag for tests that timedated/timesyncd proxies got initialized
-        if (timedate.CanNTP !== undefined && timedate1_service.unit && timedate1_service.unit.Id && timesyncd_service.enabled !== null)
+        if (timedate.CanNTP !== undefined &&
+            timedate1_service.unit && timedate1_service.unit.Id &&
+            timesyncd_service.exists !== null &&
+            chronyd_service.exists !== null)
             status.initialized = true;
 
         status.active = timedate.NTP;
@@ -241,11 +249,12 @@ export function ServerTime() {
         const timesyncd_server_regex = /.*time server (.*)\./i;
 
         const timesyncd_status = (timesyncd_service.state == "running" &&
-                                timesyncd_service.service &&
-                                timesyncd_service.service.StatusText);
+                                timesyncd_service.service?.StatusText);
 
         if (timesyncd_service.state == "running")
             status.service = "systemd-timesyncd.service";
+        else if (chronyd_service.state == "running")
+            status.service = "chronyd.service";
 
         if (timesyncd_status) {
             const match = timesyncd_status.match(timesyncd_server_regex);
@@ -258,41 +267,28 @@ export function ServerTime() {
         return status;
     };
 
-    const custom_ntp_config_file = cockpit.file("/etc/systemd/timesyncd.conf.d/50-cockpit.conf",
-                                                { superuser: "try" });
+    function get_timesync_backend() {
+        return python.spawn(get_timesync_backend_py, [], { superuser: "try", err: "message" })
+                .then(data => {
+                    const unit = data.trim();
+                    if (unit == "systemd-timesyncd.service")
+                        return "timesyncd";
+                    else if (unit == "chrony.service" || unit == "chronyd.service")
+                        return "chronyd";
+                    else
+                        return null;
+                });
+    }
 
-    self.get_custom_ntp = function () {
-        /* We only support editing the configuration of
-         * systemd-timesyncd, by dropping a file into
-         * /etc/systemd/timesyncd.conf.d.  We assume that timesyncd is
-         * used when:
-         *
-         * - systemd-timedated is answering for
-         *   org.freedesktop.timedate1 as opposed to, say, timedatex.
-         *
-         * - systemd-timesyncd is enabled (false if chrony is being used)
-         *
-         * The better alternative would be to have an API in
-         * o.fd.timedate1 for managing the list of NTP server
-         * candidates.
-         */
+    function get_custom_ntp_timesyncd() {
+        const custom_ntp_config_file = cockpit.file("/etc/systemd/timesyncd.conf.d/50-cockpit.conf",
+                                                    { superuser: "try" });
+
         const result = {
-            supported: false,
+            backend: "timesyncd",
             enabled: false,
             servers: []
         };
-
-        if (!timedate1_service.exists || timedate1_service.unit.Id !== "systemd-timedated.service") {
-            console.log("systemd-timedated not in use, ntp server configuration not supported");
-            return Promise.resolve(result);
-        }
-
-        if (!timesyncd_service.enabled) {
-            console.log("systemd-timesyncd not enabled, ntp server configuration not supported");
-            return Promise.resolve(result);
-        }
-
-        result.supported = true;
 
         return custom_ntp_config_file.read()
                 .then(function(text) {
@@ -321,13 +317,105 @@ export function ServerTime() {
                     console.warn("failed to load time servers", error);
                     return result;
                 });
+    }
+
+    function set_custom_ntp_timesyncd(config) {
+        const custom_ntp_config_file = cockpit.file("/etc/systemd/timesyncd.conf.d/50-cockpit.conf",
+                                                    { superuser: true });
+
+        const text = `# This file is automatically generated by Cockpit\n\n[Time]\n${config.enabled ? "" : "#"}NTP=${config.servers.join(" ")}\n`;
+
+        return cockpit.spawn(["mkdir", "-p", "/etc/systemd/timesyncd.conf.d"], { superuser: true })
+                .then(() => custom_ntp_config_file.replace(text));
+    }
+
+    const chronyd_sourcedir = "/etc/chrony/sources.d";
+    const chronyd_sources_enabled = chronyd_sourcedir + "/cockpit.sources";
+    const chronyd_sources_disabled = chronyd_sourcedir + "/cockpit.disabled";
+
+    function get_custom_ntp_chronyd() {
+        const enabled_file = cockpit.file(chronyd_sources_enabled, { superuser: "try" });
+        const disabled_file = cockpit.file(chronyd_sources_disabled, { superuser: "try" });
+
+        function parse_servers(data) {
+            if (!data)
+                return [];
+            const servers = [];
+            data.split("\n").forEach(function(line) {
+                const parts = line.split(" ");
+                if (parts[0] == "server")
+                    servers.push(parts[1]);
+            });
+            return servers;
+        }
+
+        return enabled_file.read()
+                .then(data => {
+                    if (data) {
+                        return {
+                            backend: "chronyd",
+                            enabled: true,
+                            servers: parse_servers(data)
+                        };
+                    } else {
+                        return disabled_file.read()
+                                .then(data => {
+                                    return {
+                                        backend: "chronyd",
+                                        enabled: false,
+                                        servers: parse_servers(data)
+                                    };
+                                });
+                    }
+                });
+    }
+
+    function set_custom_ntp_chronyd(config) {
+        const enabled_file = cockpit.file(chronyd_sources_enabled, { superuser: true });
+        const disabled_file = cockpit.file(chronyd_sources_disabled, { superuser: true });
+
+        const text = "# This file is automatically generated by Cockpit\n\n" + config.servers.map(s => `server ${s}\n`).join("");
+
+        // HACK - https://bugzilla.redhat.com/show_bug.cgi?id=2168863
+        function ensure_sourcedir() {
+            function add_sourcedir(data) {
+                const line = "sourcedir " + chronyd_sourcedir;
+                if (data && data.indexOf(line) == -1)
+                    data += "\n# Added by Cockpit\n" + line + "\n";
+                return data;
+            }
+            return cockpit.file("/etc/chrony.conf", { superuser: true }).modify(add_sourcedir);
+        }
+
+        return cockpit.spawn(["mkdir", "-p", chronyd_sourcedir], { superuser: true })
+                .then(() => {
+                    if (config.enabled)
+                        return enabled_file.replace(text).then(() => disabled_file.replace(null)).then(ensure_sourcedir);
+                    else
+                        return disabled_file.replace(text).then(() => enabled_file.replace(null));
+                });
+    }
+
+    self.get_custom_ntp = function () {
+        return get_timesync_backend().then(backend => {
+            if (backend == "timesyncd") {
+                return get_custom_ntp_timesyncd();
+            } else if (backend == "chronyd") {
+                return get_custom_ntp_chronyd();
+            } else {
+                return Promise.resolve({ backend: null, servers: [], enabled: false });
+            }
+        });
     };
 
-    self.set_custom_ntp = function (servers, enabled) {
-        const text = `# This file is automatically generated by Cockpit\n\n[Time]\n${enabled ? "" : "#"}NTP=${servers.join(" ")}\n`;
-
-        return cockpit.spawn(["mkdir", "-p", "/etc/systemd/timesyncd.conf.d"], { superuser: "try" })
-                .then(() => custom_ntp_config_file.replace(text));
+    self.set_custom_ntp = function (config) {
+        if (config.backend == "timesyncd") {
+            return set_custom_ntp_timesyncd(config);
+        } else if (config.backend == "chronyd") {
+            return set_custom_ntp_chronyd(config);
+        } else {
+            return Promise.resolve();
+        }
     };
 
     self.get_timezones = function() {
@@ -366,13 +454,13 @@ export function ServerTimeConfig() {
     const systime_button = (
         <Button variant="link" id="system_information_systime_button"
                 onClick={ () => change_systime_dialog(server_time, tz) }
-                data-timedated-initialized={ntp && ntp.initialized}
+                data-timedated-initialized={ntp?.initialized}
                 isInline isDisabled={!superuser.allowed || !tz}>
             { server_time.format(true) }
         </Button>);
 
     let ntp_status = null;
-    if (ntp && ntp.active) {
+    if (ntp?.active) {
         let icon; let header; let body = ""; let footer = null;
         if (ntp.synch) {
             icon = <InfoCircleIcon className="ct-info-circle" />;
@@ -417,7 +505,7 @@ export function ServerTimeConfig() {
 }
 
 function Validated({ errors, error_key, children }) {
-    const error = errors && errors[error_key];
+    const error = errors?.[error_key];
     // We need to always render the <div> for the has-error
     // class so that the input field keeps the focus when
     // errors are cleared.  Otherwise the DOM changes enough
@@ -431,7 +519,7 @@ function Validated({ errors, error_key, children }) {
 }
 
 function ValidatedInput({ errors, error_key, children }) {
-    const error = errors && errors[error_key];
+    const error = errors?.[error_key];
     return (
         <span className={error ? "ct-validation-wrapper has-error" : "ct-validation-wrapper"}>
             { children }
@@ -475,26 +563,33 @@ function ChangeSystimeBody({ state, errors, change }) {
     }
 
     const ntp_servers = (
-        <table>
-            <tbody>
-                { custom_ntp.servers.map((s, i) => (
-                    <tr key={i}>
-                        <td style={{ width: "100%" }}>
-                            <input type="text" className="form-control" value={s} placeholder={_("NTP server")}
-                onChange={event => change_server(event, i, event.target.value)} />
-                        </td>
-                        <td>
-                            <Button variant="secondary" onClick={event => add_server(event, i)} icon={ <PlusIcon /> } />
-                        </td>
-                        <td>
-                            <Button variant="secondary" onClick={event => remove_server(event, i)}
-                                    icon={ <CloseIcon /> }
-                                    isDisabled={i == custom_ntp.servers.length - 1} />
-                        </td>
-                    </tr>))
+        custom_ntp.servers.map((s, i) => (
+            <Flex className="ntp-server-input-group" spaceItems={{ default: 'spaceItemsSm' }} key={i}>
+                <FlexItem grow={{ default: 'grow' }}>
+                    <TextInput value={s} placeholder={_("NTP server")} aria-label={_("NTP server")}
+                               onChange={(value, event) => change_server(event, i, value)} />
+                </FlexItem>
+                <Button variant="secondary" onClick={event => add_server(event, i)}
+                        icon={ <PlusIcon /> } />
+                <Button variant="secondary" onClick={event => remove_server(event, i)}
+                        icon={ <CloseIcon /> } isDisabled={i === custom_ntp.servers.length - 1} />
+            </Flex>
+        ))
+    );
+
+    const mode_options = [
+        <SelectOption key="manual_time" value="manual_time">{_("Manually")}</SelectOption>,
+        <SelectOption key="ntp_time" value="ntp_time" isDisabled={!ntp_supported}>{_("Automatically using NTP")}</SelectOption>
+    ];
+
+    if (custom_ntp.backend)
+        mode_options.push(
+            <SelectOption key="ntp_time_custom" value="ntp_time_custom" isDisabled={!ntp_supported}>
+                { custom_ntp.backend == "chronyd"
+                    ? _("Automatically using additional NTP servers")
+                    : _("Automatically using specific NTP servers")
                 }
-            </tbody>
-        </table>);
+            </SelectOption>);
 
     return (
         <Form isHorizontal>
@@ -514,9 +609,7 @@ function ChangeSystimeBody({ state, errors, change }) {
                         isOpen={modeOpen} onToggle={setModeOpen}
                         selections={mode} onSelect={(event, value) => { setModeOpen(false); change("mode", value) }}
                         menuAppendTo="parent">
-                    <SelectOption value="manual_time">{_("Manually")}</SelectOption>
-                    <SelectOption isDisabled={!ntp_supported} value="ntp_time">{_("Automatically using NTP")}</SelectOption>
-                    <SelectOption isDisabled={!ntp_supported || !custom_ntp.supported} value="ntp_time_custom">{_("Automatically using specific NTP servers")}</SelectOption>
+                    { mode_options }
                 </Select>
                 { mode == "manual_time" &&
                     <div id="systime-manual-row">
@@ -549,10 +642,8 @@ function ChangeSystimeBody({ state, errors, change }) {
                 }
                 { mode == "ntp_time_custom" &&
                     <Validated errors={errors} error_key="ntp_servers">
-                        <div id="systime-ntp-servers-row">
-                            <div id="systime-ntp-servers">
-                                { ntp_servers }
-                            </div>
+                        <div id="systime-ntp-servers">
+                            { ntp_servers }
                         </div>
                     </Validated>
                 }
@@ -635,14 +726,10 @@ function change_systime_dialog(server_time, timezone) {
                                                                     state.manual_time));
                     } else {
                         // Switch off NTP, write the config file, and switch NTP back on
+                        state.custom_ntp.enabled = (state.mode == "ntp_time_custom");
+                        state.custom_ntp.servers = state.custom_ntp.servers.filter(s => !!s);
                         return server_time.set_ntp(false)
-                                .then(() => {
-                                    if (state.custom_ntp.supported)
-                                        return server_time.set_custom_ntp(state.custom_ntp.servers.filter(s => !!s),
-                                                                          state.mode == "ntp_time_custom");
-                                    else
-                                        return Promise.resolve();
-                                })
+                                .then(() => server_time.set_custom_ntp(state.custom_ntp))
                                 .then(() => server_time.set_ntp(true));
                     }
                 });

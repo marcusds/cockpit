@@ -21,19 +21,19 @@ import cockpit from 'cockpit';
 import React, { useState, useEffect, useRef } from 'react';
 import { superuser } from "superuser";
 
-import { admins } from './local.js';
-import {
-    Button, Badge,
-    Card, CardActions, CardExpandableContent, CardHeader, CardTitle,
-    Dropdown, DropdownItem, DropdownSeparator,
-    Flex, FlexItem,
-    HelperText, HelperTextItem,
-    KebabToggle, Label,
-    Page, PageSection,
-    SearchInput, Stack,
-    Text, TextContent, TextVariants,
-    Toolbar, ToolbarContent, ToolbarItem
-} from '@patternfly/react-core';
+import { admins } from './users.js';
+import { Button } from "@patternfly/react-core/dist/esm/components/Button/index.js";
+import { Badge } from "@patternfly/react-core/dist/esm/components/Badge/index.js";
+import { Card, CardActions, CardExpandableContent, CardHeader, CardTitle } from "@patternfly/react-core/dist/esm/components/Card/index.js";
+import { Dropdown, DropdownItem, DropdownSeparator, KebabToggle } from "@patternfly/react-core/dist/esm/components/Dropdown/index.js";
+import { Flex, FlexItem } from "@patternfly/react-core/dist/esm/layouts/Flex/index.js";
+import { HelperText, HelperTextItem } from "@patternfly/react-core/dist/esm/components/HelperText/index.js";
+import { Label } from "@patternfly/react-core/dist/esm/components/Label/index.js";
+import { Page, PageSection } from "@patternfly/react-core/dist/esm/components/Page/index.js";
+import { SearchInput } from "@patternfly/react-core/dist/esm/components/SearchInput/index.js";
+import { Stack } from "@patternfly/react-core/dist/esm/layouts/Stack/index.js";
+import { Text, TextContent, TextVariants } from "@patternfly/react-core/dist/esm/components/Text/index.js";
+import { Toolbar, ToolbarContent, ToolbarItem } from "@patternfly/react-core/dist/esm/components/Toolbar/index.js";
 import * as timeformat from "timeformat.js";
 import { EmptyStatePanel } from 'cockpit-components-empty-state.jsx';
 import { ListingTable } from 'cockpit-components-table.jsx';
@@ -41,38 +41,14 @@ import { SearchIcon } from '@patternfly/react-icons';
 import { SortByDirection } from "@patternfly/react-table";
 import { account_create_dialog } from "./account-create-dialog.js";
 import { delete_account_dialog } from "./delete-account-dialog.js";
-import { delete_group_dialog } from "./delete-group-dialog.js";
 import { group_create_dialog } from "./group-create-dialog.js";
 import { lockAccountDialog } from "./lock-account-dialog.js";
 import { logoutAccountDialog } from "./logout-account-dialog.js";
+import { GroupActions } from "./group-actions.jsx";
 
 import { usePageLocation } from "hooks";
 
 const _ = cockpit.gettext;
-
-const GroupActions = ({ group, accounts }) => {
-    const [isKebabOpen, setKebabOpen] = useState(false);
-
-    if (!superuser.allowed)
-        return null;
-
-    const actions = [
-        <DropdownItem key="delete-group"
-                      className={group.uid === 0 ? "" : "delete-resource-red"}
-                      onClick={() => { setKebabOpen(false); delete_group_dialog(group) }}>
-            {_("Delete group")}
-        </DropdownItem>,
-    ];
-
-    const kebab = (
-        <Dropdown toggle={<KebabToggle onToggle={setKebabOpen} />}
-                isPlain
-                isOpen={isKebabOpen}
-                position="right"
-                dropdownItems={actions} />
-    );
-    return kebab;
-};
 
 const UserActions = ({ account }) => {
     const [isKebabOpen, setKebabOpen] = useState(false);
@@ -110,12 +86,14 @@ const UserActions = ({ account }) => {
                 isPlain
                 isOpen={isKebabOpen}
                 position="right"
+                id="accounts-actions"
+                menuAppendTo={document.body}
                 dropdownItems={actions} />
     );
     return kebab;
 };
 
-const getGroupRow = (group, accounts) => {
+const getGroupRow = (group, accounts, isUserCreatedGroup) => {
     let groupColorClass;
     if (group.isAdmin)
         groupColorClass = "group-gold";
@@ -127,7 +105,12 @@ const getGroupRow = (group, accounts) => {
     const columns = [
         {
             sortKey: group.name,
-            title: <Flex alignItems={{ default: 'alignItemsCenter' }}><div className={"dot " + groupColorClass} /><FlexItem>{group.name}</FlexItem></Flex>,
+            title: (
+                <Flex alignItems={{ default: 'alignItemsCenter' }}>
+                    <div className={"dot " + groupColorClass} />
+                    <FlexItem>{group.name}</FlexItem>
+                </Flex>
+            ),
             props: { width: 20, },
         },
         {
@@ -136,30 +119,36 @@ const getGroupRow = (group, accounts) => {
         },
         {
             title: group.members,
-            props: { width: 10, },
+            props: { width: 20, },
         },
         {
             title: (
                 <TextContent>
                     <Text component={TextVariants.p}>
-                        {(group.userlistPrimary.concat(group.userlist)).map((account, idx) => {
-                            const comma = idx !== group.userlistPrimary.length + group.userlist.length - 1 ? ', ' : '';
-
-                            if (accounts.map(account => account.name).includes(account))
-                                return <Text key={account} component={TextVariants.a} href={"#" + account}>{account}{comma}</Text>;
-                            else
-                                return account + comma;
-                        })}
+                        {(group.userlistPrimary.concat(group.userlist))
+                                .map(account => {
+                                    if (accounts.map(account => account.name).includes(account))
+                                        return <Text key={account} component={TextVariants.a} href={"#" + account}>{account}</Text>;
+                                    else
+                                        return account;
+                                })
+                                .reduce((acc, curr) => [...acc, ", ", curr], [])
+                                .slice(1)}
                     </Text>
                 </TextContent>
             ),
-            props: { width: 60, },
-        },
-        {
-            title: <GroupActions group={group} accounts={accounts} />,
-            props: { className: "pf-c-table__action" }
+            props: { width: 50, },
         },
     ];
+
+    if (superuser.allowed) {
+        columns.push(
+            {
+                title: <GroupActions group={group} accounts={accounts} isUserCreatedGroup={isUserCreatedGroup} />,
+                props: { className: "pf-c-table__action" }
+            }
+        );
+    }
 
     return { columns, props: { key: group.gid } };
 };
@@ -242,7 +231,7 @@ const mapGroupsToAccount = (accounts, groups) => {
     });
 };
 
-const GroupsList = ({ groups, accounts, isExpanded, setIsExpanded }) => {
+const GroupsList = ({ groups, accounts, isExpanded, setIsExpanded, min_gid, max_gid }) => {
     const { options } = usePageLocation();
     const [currentTextFilter, setCurrentTextFilter] = useState(options.group || '');
     const columns = [
@@ -313,7 +302,7 @@ const GroupsList = ({ groups, accounts, isExpanded, setIsExpanded }) => {
                     <>
                         {isExpanded && <ToolbarItem variant="separator" />}
                         <ToolbarItem alignment={{ md: 'alignRight' }}>
-                            <Button variant="secondary" id="groups-create" onClick={() => group_create_dialog(groups, setIsExpanded)}>
+                            <Button variant="secondary" id="groups-create" onClick={() => group_create_dialog(groups, setIsExpanded, min_gid, max_gid)}>
                                 {_("Create new group")}
                             </Button>
                         </ToolbarItem>
@@ -368,7 +357,7 @@ const GroupsList = ({ groups, accounts, isExpanded, setIsExpanded }) => {
     );
 };
 
-const AccountsList = ({ accounts, current_user, groups }) => {
+const AccountsList = ({ accounts, current_user, groups, min_uid, max_uid, shells }) => {
     const { options } = usePageLocation();
     const [currentTextFilter, setCurrentTextFilter] = useState(options.user || '');
     const filtered_accounts = accounts.filter(account => {
@@ -453,7 +442,7 @@ const AccountsList = ({ accounts, current_user, groups }) => {
                     <>
                         <ToolbarItem variant="separator" />
                         <ToolbarItem alignment={{ md: 'alignRight' }}>
-                            <Button id="accounts-create" onClick={() => account_create_dialog(accounts)}>
+                            <Button id="accounts-create" onClick={() => account_create_dialog(accounts, min_uid, max_uid, shells)}>
                                 {_("Create new account")}
                             </Button>
                         </ToolbarItem>
@@ -484,7 +473,7 @@ const AccountsList = ({ accounts, current_user, groups }) => {
     );
 };
 
-export const AccountsMain = ({ accountsInfo, current_user, groups, isGroupsExpanded, setIsGroupsExpanded }) => {
+export const AccountsMain = ({ accountsInfo, current_user, groups, isGroupsExpanded, setIsGroupsExpanded, min_gid, max_gid, min_uid, max_uid, shells }) => {
     const accounts = mapGroupsToAccount(accountsInfo, groups).filter(account => {
         if ((account.uid < 1000 && account.uid !== 0) ||
                  account.shell.match(/^(\/usr)?\/sbin\/nologin/) ||
@@ -497,8 +486,8 @@ export const AccountsMain = ({ accountsInfo, current_user, groups, isGroupsExpan
         <Page id="accounts">
             <PageSection>
                 <Stack hasGutter>
-                    <GroupsList accounts={accounts} groups={groups} isExpanded={isGroupsExpanded} setIsExpanded={setIsGroupsExpanded} />
-                    <AccountsList accounts={accounts} current_user={current_user} groups={groups} />
+                    <GroupsList accounts={accounts} groups={groups} isExpanded={isGroupsExpanded} setIsExpanded={setIsGroupsExpanded} min_gid={min_gid} max_gid={max_gid} />
+                    <AccountsList accounts={accounts} current_user={current_user} groups={groups} shells={shells} min_uid={min_uid} max_uid={max_uid} />
                 </Stack>
             </PageSection>
         </Page>

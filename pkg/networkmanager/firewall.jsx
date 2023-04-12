@@ -22,20 +22,22 @@ import 'cockpit-dark-theme'; // once per page
 import cockpit from "cockpit";
 import React, { useState } from 'react';
 import { createRoot } from "react-dom/client";
-import {
-    Alert, Button,
-    Breadcrumb, BreadcrumbItem,
-    Checkbox,
-    Card, CardTitle, CardHeader, CardActions, CardBody,
-    DataList, DataListItem, DataListCell, DataListItemRow, DataListCheck, DataListItemCells,
-    Dropdown, DropdownItem,
-    Flex, FlexItem,
-    Form, FormGroup, FormHelperText,
-    KebabToggle,
-    Radio, Stack,
-    TextInput, Title, Toolbar, ToolbarContent, ToolbarItem,
-    Page, PageSection, PageSectionVariants, Modal,
-} from '@patternfly/react-core';
+import { Alert } from "@patternfly/react-core/dist/esm/components/Alert/index.js";
+import { Button } from "@patternfly/react-core/dist/esm/components/Button/index.js";
+import { Breadcrumb, BreadcrumbItem } from "@patternfly/react-core/dist/esm/components/Breadcrumb/index.js";
+import { Checkbox } from "@patternfly/react-core/dist/esm/components/Checkbox/index.js";
+import { Card, CardActions, CardBody, CardHeader, CardTitle } from "@patternfly/react-core/dist/esm/components/Card/index.js";
+import { DataList, DataListCell, DataListCheck, DataListItem, DataListItemCells, DataListItemRow } from "@patternfly/react-core/dist/esm/components/DataList/index.js";
+import { Dropdown, DropdownItem, KebabToggle } from "@patternfly/react-core/dist/esm/components/Dropdown/index.js";
+import { Flex, FlexItem } from "@patternfly/react-core/dist/esm/layouts/Flex/index.js";
+import { Form, FormGroup, FormHelperText } from "@patternfly/react-core/dist/esm/components/Form/index.js";
+import { Radio } from "@patternfly/react-core/dist/esm/components/Radio/index.js";
+import { Stack } from "@patternfly/react-core/dist/esm/layouts/Stack/index.js";
+import { TextInput } from "@patternfly/react-core/dist/esm/components/TextInput/index.js";
+import { Title } from "@patternfly/react-core/dist/esm/components/Title/index.js";
+import { Toolbar, ToolbarContent, ToolbarItem } from "@patternfly/react-core/dist/esm/components/Toolbar/index.js";
+import { Page, PageSection, PageSectionVariants } from "@patternfly/react-core/dist/esm/components/Page/index.js";
+import { Modal } from "@patternfly/react-core/dist/esm/components/Modal/index.js";
 import { ExclamationCircleIcon } from '@patternfly/react-icons';
 
 import firewall from "./firewall-client.js";
@@ -327,6 +329,7 @@ class AddEditServicesModal extends React.Component {
         };
         this.save = this.save.bind(this);
         this.edit = this.edit.bind(this);
+        this.checkNullValues = this.checkNullValues.bind(this);
         this.onFilterChanged = this.onFilterChanged.bind(this);
         this.onToggleService = this.onToggleService.bind(this);
         this.setId = this.setId.bind(this);
@@ -349,6 +352,10 @@ class AddEditServicesModal extends React.Component {
     getCustomId() {
         const all_ports = this.state.custom_tcp_ports.concat(this.state.custom_udp_ports);
         return "custom--" + all_ports.map(this.getName).join('-');
+    }
+
+    checkNullValues() {
+        return (!this.state.custom_tcp_value && !this.state.custom_udp_value);
     }
 
     edit(event) {
@@ -378,10 +385,10 @@ class AddEditServicesModal extends React.Component {
         }
         p.then(() => Dialogs.close())
                 .catch(error => {
-                    this.setState({
-                        dialogError: this.state.custom ? _("Failed to add port") : _("Failed to add service"),
+                    this.setState(prevState => ({
+                        dialogError: prevState.custom ? _("Failed to add port") : _("Failed to add service"),
                         dialogErrorDetail: error.name + ": " + error.message,
-                    });
+                    }));
                 });
 
         if (event)
@@ -402,7 +409,7 @@ class AddEditServicesModal extends React.Component {
                 selected.delete(service);
 
             return {
-                selected: selected
+                selected
             };
         });
     }
@@ -597,7 +604,7 @@ class AddEditServicesModal extends React.Component {
                                isInline
                                title={_("Adding custom ports will reload firewalld. A reload will result in the loss of any runtime-only configuration!")} />
                        }
-                       <Button variant='primary' onClick={this.props.custom_id ? this.edit : this.save} aria-label={titleText}>
+                       <Button variant='primary' isDisabled={(this.state.custom && this.checkNullValues()) || (!this.state.custom && !this.state.selected.size)} onClick={this.props.custom_id ? this.edit : this.save} aria-label={titleText}>
                            {addText}
                        </Button>
                        <Button variant='link' className='btn-cancel' onClick={Dialogs.close}>
@@ -746,7 +753,7 @@ class ActivateZoneModal extends React.Component {
                 interfaces.add(int);
             else
                 interfaces.delete(int);
-            return { interfaces: interfaces };
+            return { interfaces };
         });
     }
 
@@ -791,8 +798,8 @@ class ActivateZoneModal extends React.Component {
         });
         // https://networkmanager.dev/docs/api/latest/nm-dbus-types.html#NMDeviceCapabilities
         const NM_DEVICE_CAP_IS_SOFTWARE = 4;
-        const virtualDevices = interfaces.filter(i => i.capabilities & NM_DEVICE_CAP_IS_SOFTWARE !== 0 && i.device !== "lo").sort((a, b) => a.device.localeCompare(b.device));
-        const physicalDevices = interfaces.filter(i => (i.capabilities & NM_DEVICE_CAP_IS_SOFTWARE === 0) && i.device !== "lo").sort((a, b) => a.device.localeCompare(b.device));
+        const virtualDevices = interfaces.filter(i => (i.capabilities & NM_DEVICE_CAP_IS_SOFTWARE) !== 0 && i.device !== "lo").sort((a, b) => a.device.localeCompare(b.device));
+        const physicalDevices = interfaces.filter(i => ((i.capabilities & NM_DEVICE_CAP_IS_SOFTWARE) === 0) && i.device !== "lo").sort((a, b) => a.device.localeCompare(b.device));
         return (
             <Modal id="add-zone-dialog" isOpen
                    position="top" variant="medium"

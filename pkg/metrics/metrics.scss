@@ -6,6 +6,10 @@
 // utilities for `pf-u...` classes
 @import "@patternfly/patternfly/utilities/Spacing/spacing.css";
 
+// colors for PF charts
+@import "@patternfly/patternfly/patternfly-charts.css";
+@import "@patternfly/patternfly/patternfly-charts-theme-dark.css";
+
 #app {
   section.pf-c-page__main-breadcrumb {
     padding-bottom: var(--pf-c-page__main-breadcrumb--PaddingTop);
@@ -13,14 +17,18 @@
 }
 
 html {
-  --metrics-heading-color: #fff;
-  --metrics-heading-time-color: #eee;
+  --metrics-heading-time-color: var(--pf-global--BackgroundColor--light-100);
+  --resource-icon-color-empty: var(--pf-global--palette--black-400);
+  --resource-icon-color-middle: var(--pf-global--palette--orange-200);
+  --resource-icon-color-full: var(--pf-global--palette--orange-400);
 }
 
 .pf-theme-dark {
-  --metrics-heading-color: var(--pf-global--BackgroundColor-dark-100);
   --metrics-heading-time-color: var(--pf-global--BackgroundColor--300);
   --metrics-events-border-color: #000;
+  --resource-icon-color-empty: var(--pf-global--palette--black-400);
+  --resource-icon-color-middle: var(--pf-global--palette--orange-500);
+  --resource-icon-color-full: var(--pf-global--palette--orange-200);
 }
 
 // Remove doubled-up padding on "main" sections, when two+ sections are used.
@@ -216,8 +224,6 @@ html {
     min-width: 0;
   }
 
-  // Adjust responsive versions of lg grid tables
-  // (mainly for the network table, as it is more information dense)
   .pf-m-grid-lg.pf-c-table {
     tbody:first-of-type {
       border-top: none;
@@ -314,34 +320,59 @@ html {
   }
 }
 
+$graphs: cpu, memory, disks, network;
+
 .metrics {
+  --cpu-color: var(--pf-chart-color-purple-200);
+  --cpu-color-extreme: var(--pf-chart-color-purple-300);
+
+  --memory-color: var(--pf-chart-color-green-200);
+  --memory-color-extreme: var(--pf-chart-color-green-300);
+
+  --disks-color: var(--pf-chart-color-gold-300);
+  --disks-color-extreme: var(--pf-chart-color-gold-400);
+
+  --network-color: var(--pf-chart-color-black-300);
+  --network-color-extreme: var(--pf-chart-color-black-400);
+
   --column-size: 10vw;
   --half-column-size: 8vw;
   --data-min-height: 5px;
 
+  --graph-column-size: 60%;
+
+  &-hour-compressed {
+    --data-min-height: 1px;
+    display: flex;
+    background-color: var(--pf-global--BackgroundColor--light-300);
+  }
+
   &-heading,
-  &-minute {
-    display: grid;
-    grid-template-columns: 1fr 2fr;
+  &-hour:not(.metrics-hour-compressed) .metrics-minute {
+    background-color: var(--pf-global--BackgroundColor--light-300);
+    display: flex;
+  }
+
+  &-heading,
+  &-heading-graphs {
+    align-items: center;
   }
 
   &-graphs {
+    flex-basis: var(--graph-column-size);
+    margin-left: auto;
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(var(--column-size), 1fr));
+    grid-template-columns: repeat(var(--graph-cnt), minmax(var(--column-size), 1fr));
 
     .metrics-data {
       min-height: var(--data-min-height);
     }
   }
 
-  &-label {
-    max-width: 20ch;
-    margin: 0.5rem;
-  }
-
   &-sublabels.pf-c-content {
     small {
       font-size: var(--pf-global--FontSize--xs);
+      margin-bottom: var(--pf-global--spacer--xs) !important;
     }
     display: flex;
   }
@@ -362,42 +393,75 @@ html {
     }
   }
 
+  &-minutes {
+    flex-basis: var(--graph-column-size);
+    align-self: end;
+  }
+
+  &-events-hour-header-expanded {
+    width: calc(100% - var(--graph-column-size));
+  }
+
+  &-selectors,
   &-events-wrapper {
+    flex-basis: calc(100% - var(--graph-column-size));
     width: 100%;
   }
 
   &-events {
-    width: 100%;
+    display: flex;
+    column-gap: var(--pf-global--spacer--sm);
+    flex-basis: calc(100% - var(--graph-column-size));
+    align-items: baseline;
+    font-size: var(--pf-global--FontSize--sm);
 
-    --pf-c-table--BorderColor: var(--metrics-events-border-color, default);
-
-    // Remove left padding from the table toggle
-    .pf-c-table__toggle {
-      padding-left: 0;
+    &-expander {
+      min-width: 3rem;
     }
 
-    .description {
-      display: grid;
-      grid-template-columns: [info] 1fr [time] 1fr;
+    time:first-child {
+      margin-left: calc(3rem + var(--pf-global--spacer--sm));
 
-      .details {
-        grid-column: time;
-        grid-row: 1;
-        display: flex;
-        justify-content: space-between;
-        width: 100%;
+      + .spikes_count {
+        padding-left: calc(var(--pf-global--spacer--xl) + var(--pf-global--spacer--md));
+        color: var(--pf-global--Color--200);
+      }
+    }
+
+    .spikes_count {
+      > div {
+        white-space: nowrap;
+        align-items: baseline;
       }
 
-      .type {
-        grid-column: info;
+      svg {
+        align-self: center;
       }
+    }
+
+    > * {
+      line-height: var(--pf-global--LineHeight--md);
+    }
+
+    > *:not(.metrics-events-expander):not(:last-child) {
+      flex: 1;
+      white-space: nowrap;
+    }
+
+    > *:last-child {
+      flex-basis: 50%;
+    }
+
+    // Just embolden the top level time events
+    button + time {
+      font-weight: var(--pf-global--FontWeight--bold);
     }
 
     // Make messages such as `Loading...` or `No logs found` centered
     .cockpit-log-panel {
       display: flex;
       flex-wrap: wrap;
-      justify-content: center;
+      // justify-content: center;
 
       .cockpit-logline {
         flex: 0 0 100%;
@@ -407,43 +471,42 @@ html {
 
   &-time,
   &-heading {
-    position: relative;
-    width: calc(100% + var(--pf-c-page__main-section--PaddingRight) + var(--pf-c-page__main-section--PaddingLeft));
-    right: var(--pf-c-page__main-section--PaddingRight);
-
     padding-right: var(--pf-c-page__main-section--PaddingRight);
     padding-left: var(--pf-c-page__main-section--PaddingLeft);
   }
 
   &-time {
     background: var(--metrics-heading-time-color);
-    padding: 0.5rem 1rem;
-    margin-left: var(--pf-global--spacer--md);
-  }
+    padding-top: var(--pf-global--spacer--md);
+    padding-bottom: var(--pf-global--spacer--sm);
 
-  &-heading {
-    background: var(--metrics-heading-color);
-    margin-bottom: 0.25rem;
-    box-shadow: var(--pf-global--BoxShadow--sm);
-
-    &-sticky {
-      position: sticky;
-      top: 0;
-      z-index: 99;
+    // Time has tabular numbers, but it's not what we want for a heading
+    time {
+      font-variant: none !important;
     }
   }
 
+  &-history-section {
+    padding: 0;
+  }
+
   &-history {
+    background-color: var(--pf-global--BackgroundColor--light-300);
     padding: 0;
   }
 
   &-data {
+    --gradient-fragment: var(--color) 80%, var(--color-extreme) 90%;
+    --gradient: linear-gradient(to right, var(--gradient-fragment));
+    --gradient-flip: linear-gradient(to left, var(--gradient-fragment));
     display: grid;
     contain: strict;
-    margin-left: 0.5rem;
-    margin-right: 0.5rem;
+    margin: 0 var(--pf-global--spacer--sm);
     // Make SVG and generated before/after line position relative to metrics-data
     position: relative;
+    grid-template-areas: "utilization";
+    // Make sure rows expand (WebKit needs this)
+    grid-template-rows: 1fr;
 
     // vertical ruler line for areas with data, and horizontal tick mark for utilization half
     &.valid-data::before {
@@ -454,7 +517,6 @@ html {
       top: 0;
       bottom: 0;
       border-right: 1px solid rgb(0 0 0 / 30%);
-      border-top: 1px solid rgb(0 0 0 / 30%);
     }
 
     &.valid-data.have-saturation::before {
@@ -468,65 +530,52 @@ html {
       z-index: 1;
       width: 50%;
       left: 50%;
-      border-top: 1px solid rgb(0 0 0 / 30%);
     }
 
-    > svg {
-      fill: var(--color);
-      min-width: 2px;
-      width: 100%;
-      height: 100%;
+    .polygon {
       // WebKit has an issue with normal positioning (height exceeds bounds), but absolute works fine
       position: absolute;
       top: 0;
       left: 0;
+      clip-path: polygon(var(--points));
+      background: var(--gradient);
+      height: 100%;
+      width: 100%;
     }
 
-    &-cpu {
-      --color: plum;
-    }
-
-    &-memory {
-      --color: lightblue;
-    }
-
-    &-disks {
-      --color: lightgreen;
-    }
-
-    &-network {
-      --color: lightsalmon;
-    }
-
-    // compressed minutes without events are simple bars
-    .compressed {
-      display: grid;
-      grid-template-areas: ". utilization .";
-
-      --util-pct: calc(100% * var(--utilization));
-      grid-template-columns: calc(100% - var(--util-pct)) var(--util-pct);
-
-      > .saturation,
-      > .utilization {
-        background-color: var(--color);
-      }
-
-      > .utilization {
-        grid-area: utilization;
-      }
-
-      > .saturation {
-        grid-area: saturation;
-        opacity: 0.7;
+    @each $graph in $graphs {
+      &-#{$graph} {
+        --color: var(--#{$graph}-color);
+        --color-extreme: var(--#{$graph}-color-extreme);
       }
     }
 
-    &.have-saturation .compressed {
-      grid-template-areas: ". utilization saturation .";
-      --util-pct: calc(50% * var(--utilization));
-      --sat-pct: calc(50% * var(--saturation));
-      grid-template-columns: calc(50% - var(--util-pct)) var(--util-pct) var(--sat-pct) calc(50% - var(--sat-pct));
+    .polygon.polygon-use {
+      transform: scale(-1);
     }
+
+    .polygon-use {
+      grid-area: utilization;
+    }
+
+    .polygon-sat {
+      opacity: 0.7;
+      grid-area: saturation;
+    }
+
+    .compressed.polygon-sat {
+      background: var(--gradient);
+      clip-path: inset(0 calc(100% - var(--saturation) * 100%) 0 0);
+    }
+
+    .compressed.polygon-use {
+      background: var(--gradient-flip);
+      clip-path: inset(0 0 0 calc(100% - var(--utilization) * 100%));
+    }
+  }
+
+  &-data.have-saturation {
+    grid-template-areas: "utilization saturation";
   }
 
   // vertical dotted line through graph center, for areas without data
@@ -550,6 +599,21 @@ html {
     left: 50%;
   }
 
+  &-hour {
+    padding: 0 var(--pf-global--spacer--sm);
+  }
+
+  &-hour:not(.metrics-hour-compressed) .metrics-minute,
+  &-hour.metrics-hour-compressed .metrics-minute:last-of-type {
+    .valid-data.have-saturation::after,
+    .valid-data::before {
+      // Fake a border via clip-path, to set it on top, instead of after
+      background: rgb(120 120 120 / 30%);
+      pointer-events: none;
+      clip-path: inset(calc(100% - 1px) 0 0);
+    }
+  }
+
   .pf-c-card__body:first-child {
     padding-top: 0;
   }
@@ -558,13 +622,54 @@ html {
 // Graph column labels are the widest part; scale down the labels for narrow widths
 @media (min-width: 800px) and (max-width: 1200px) {
   .metrics-label-graph {
-    font-size: var(--pf-global--FontSize--s);
+    font-size: var(--pf-global--FontSize--sm);
+  }
+}
+
+@media (min-width: 800px) {
+  .metrics-label-graph-mobile {
+    display: none;
   }
 }
 
 @media (max-width: 800px) {
-  .metrics-label-graph {
-    font-size: var(--pf-global--FontSize--xs);
+  .metrics {
+    --graph-column-size: 40%;
+
+    time:first-child {
+      + .spikes_count {
+        padding-left: 0;
+      }
+    }
+  }
+
+  .metrics-heading > .metrics-graphs,
+  .metrics-minute > .metrics-events > .spikes_count {
+    display: none;
+  }
+
+  .metrics-label-graph-mobile {
+    padding-left: var(--pf-global--spacer--sm);
+    padding-top: var(--pf-global--spacer--sm);
+    font-size: var(--pf-global--FontSize--sm);
+  }
+
+  .square {
+    width: 1rem;
+    height: 1rem;
+  }
+
+  @each $graph in $graphs {
+    .label-#{$graph} {
+      background-color: var(--#{$graph}-color);
+    }
+  }
+
+  .metrics-hour > .metrics-events {
+    .spikes_info,
+    .spikes_count svg {
+      display: none;
+    }
   }
 }
 
@@ -616,5 +721,78 @@ html {
     // Aligning percentages to the right, especially when monospaced,
     // makes  it easier to see high percentages
     text-align: right;
+  }
+}
+
+// FIXME: We probably want to adapt some of these for the general log message widget
+.cockpit-logline {
+  padding: 0.25rem 0;
+}
+
+.cockpit-log-message {
+  text-align: start;
+  overflow-wrap: anywhere;
+  white-space: break-spaces;
+  // Clamping is supported in all browsers,
+  // but it needs special webkit prefix (yes, in all browsers)
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  display: webkit-box; /* stylelint-disable-line */
+  color: var(--pf-global--active-color--100);
+}
+
+// Log warning icon is incorrectly aligned (especially when messages wrap);
+// this fixes it by realigning and offsetting
+.cockpit-log-warning {
+  transform: translateY(calc((var(--pf-global--spacer--md) - 22px) / -2));
+  margin: 0 var(--pf-global--spacer--xs) 0 0;
+  align-self: baseline;
+}
+
+.metrics-events-popover {
+  .cockpit-log-panel {
+    overflow: auto;
+    // Remove extra whitespace; the modal already has some
+    padding: 0;
+    margin: 0;
+  }
+
+  .pf-c-popover__content {
+    // Remove extra whitespace in the modal
+    --pf-c-popover--c-button--sibling--PaddingRight: 0;
+  }
+}
+
+@media (min-width: 801px) {
+  .metrics-events-popover {
+    .cockpit-log-panel {
+      // Limit the size of the popover to make it more elegant
+      max-height: 65vw;
+    }
+
+    .pf-c-popover__content {
+      // Limit the width of the popover in desktop mode
+      max-width: max(30rem, 40vw);
+    }
+  }
+}
+
+@media (max-width: 800px) {
+  .metrics-events-popover {
+    // Make the popover into a sheet from the bottom in mobile mode
+    inset: auto 0 0 0 !important;
+    transform: none !important;
+    max-height: 100%;
+    min-height: 25vh;
+
+    .pf-c-popover__content {
+      // Limit the width of the popover in desktop mode
+      max-width: max(100vw);
+    }
+
+    // As a sheet at the bottom, it doesn't point to anything
+    .pf-c-popover__arrow {
+      display: none;
+    }
   }
 }

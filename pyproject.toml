@@ -8,7 +8,7 @@ version = '0'
 
 [project.scripts]
 cockpit-bridge = "cockpit.bridge:main"
-cockpit-askpass = "cockpit.askpass:main"
+cockpit-askpass = "cockpit._vendor.ferny.interaction_client:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -16,7 +16,9 @@ include = [
   "cockpit",
   "cockpit.channels",
   "cockpit.data",
-  "systemd_ctypes",
+  "cockpit._vendor",
+  "cockpit._vendor.ferny",
+  "cockpit._vendor.systemd_ctypes",
 ]
 
 [tool.setuptools.package-data]
@@ -24,8 +26,9 @@ include = [
 
 [tool.mypy]
 mypy_path = 'src/cockpit'
+exclude = '_vendor'
 [[tool.mypy.overrides]]
-module = ["systemd_ctypes.*"]
+module = ["cockpit._vendor.*"]
 follow_imports = 'silent'
 
 [tool.pylint]
@@ -41,6 +44,7 @@ disable = [
 ]
 
 [tool.pytest.ini_options]
+addopts = ['--strict-markers']  # cf. https://github.com/cockpit-project/cockpit/pull/18584#issuecomment-1490243994
 pythonpath = ["src"]
 testpaths = ["test/pytest"]
 log_cli = true

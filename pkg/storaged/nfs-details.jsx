@@ -19,15 +19,10 @@
 
 import cockpit from "cockpit";
 import React from "react";
-import {
-    Alert,
-    Card, CardHeader, CardTitle, CardBody, CardActions,
-    Text, TextVariants,
-    DescriptionList,
-    DescriptionListTerm,
-    DescriptionListGroup,
-    DescriptionListDescription
-} from "@patternfly/react-core";
+import { Alert } from "@patternfly/react-core/dist/esm/components/Alert/index.js";
+import { Card, CardActions, CardBody, CardHeader, CardTitle } from "@patternfly/react-core/dist/esm/components/Card/index.js";
+import { Text, TextVariants } from "@patternfly/react-core/dist/esm/components/Text/index.js";
+import { DescriptionList, DescriptionListDescription, DescriptionListGroup, DescriptionListTerm } from "@patternfly/react-core/dist/esm/components/DescriptionList/index.js";
 import {
     dialog_open, TextInput, ComboBox, CheckBoxes,
     StopProcessesMessage, stop_processes_danger_message
@@ -122,7 +117,7 @@ export function nfs_fstab_dialog(client, entry) {
                 dlg.set_options("remote", { choices: [] });
                 get_exported_directories(server).then(choices => {
                     if (server == server_to_check)
-                        dlg.set_options("remote", { choices: choices });
+                        dlg.set_options("remote", { choices });
                 });
             }, delay);
         }

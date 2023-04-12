@@ -45,9 +45,6 @@ class TestServices(MachineCase):
         self.restore_dir("/etc/xdg/systemd/user", user_post_restore, True)
         self.restore_dir("/home/admin/.config", user_post_restore, True)
 
-        # FIXME: this page is too slow
-        self.browser.wait_timeout(60)
-
     def run_systemctl(self, user, cmd):
         if user:
             self.machine.execute(f"su - admin -c 'export XDG_RUNTIME_DIR=/run/user/$(id -u admin); systemctl --user {cmd}'")
@@ -244,6 +241,10 @@ Description=Delete Me Timer
 
 [Timer]
 OnCalendar=*:1/2
+
+# just for user mode
+[Install]
+WantedBy=default.target
 """)
         self.write_file(f"{path}/special@:-characters.service",
                         """
@@ -258,6 +259,10 @@ WantedBy=default.target
 """)
 
         self.make_test_service(path)
+        # ensure we have one running timer; in user mode we do not have
+        # a running logind session at this point yet, so enable instead
+        self.run_systemctl(False, ("enable --global --runtime" if user else "start") + " deleteme.timer")
+        self.addCleanup(self.run_systemctl, user, "stop deleteme.timer || true")
 
         url = "/system/services#/?owner=user" if user else "/system/services"
         self.login_and_go(url, user="admin")
@@ -301,7 +306,7 @@ WantedBy=default.target
         if not user:
             # Make sure that symlinked services also appear in the list
             self.wait_service_state("reboot.target", "inactive")
-            self.wait_service_state("ctrl-alt-del.target", "inactive")
+            self.wait_service_present("ctrl-alt-del.target")
             self.goto_service("ctrl-alt-del.target")
             b.wait_in_text(".service-name", "Reboot")
             b.click("#services-page .pf-c-breadcrumb__link")
@@ -320,6 +325,9 @@ WantedBy=default.target
         b.wait_visible(self.svc_sel('test.timer'))
         b.wait_text(self.svc_sel('test.timer') + ' .service-unit-triggers', '')
         today = b.eval_js("Intl.DateTimeFormat('en', { dateStyle: 'medium' }).format()")
+        # timer from initial page/units load
+        b.wait_in_text(self.svc_sel('deleteme.timer') + ' .service-unit-next-trigger', today)
+        # timer gets updated on PropertiesChanged event
         self.run_systemctl(user, "start test.timer")
         b.wait_in_text(self.svc_sel('test.timer') + ' .service-unit-next-trigger', today)  # next run
         b.wait_in_text(self.svc_sel('test.timer') + ' .service-unit-last-trigger', "unknown")  # last trigger
@@ -347,6 +355,7 @@ WantedBy=default.target
             self.goto_service("deleteme.timer")
             self.do_action("Delete")
             b.click("#delete-timer-modal-btn")
+            b.wait_not_present(".pf-c-modal-box")
             self.wait_page_load()
             self.assertNotIn("deleteme", m.execute("systemctl list-timers"))
             m.execute(f"! test -f {path}/deleteme.service")
@@ -385,14 +394,6 @@ WantedBy=default.target
         self.check_service_details(["Disabled"], ["Start", "Disallow running (mask)", "Pin unit"], False)
         self.toggle_onoff()
         self.check_service_details(["Running", "Automatically starts"], ["Reload", "Restart", "Stop", "Disallow running (mask)", "Pin unit"], True)
-
-        testUrl = f'/system/services#/test.service{suffix}'
-        # Check without permissions
-        b.relogin(testUrl, superuser=False)
-        self.wait_page_load()
-
-        b.relogin(testUrl, superuser=True)
-        self.wait_page_load()
         self.toggle_onoff()  # later on we need some disabled test
         self.check_service_details(["Disabled"], ["Start", "Disallow running (mask)", "Pin unit"], False)
 
@@ -500,7 +501,7 @@ WantedBy=default.target
         # Filter by description capital letters included
         init_filter_state()
         b.set_input_text("#services-text-filter input", "Test Service")
-        self.wait_service_present("test.service")
+        # test.service is not loaded, thus description search does not find it
         self.wait_service_present("test-fail.service")
         if not user:
             b.assert_pixels("#services-page", "text-filter-test", skip_layouts=["mobile"])
@@ -614,10 +615,11 @@ ExecStart=/bin/awk -f /tmp/mem-hog{params}.awk
         self.goto_service("mem-hog.service")
         b.wait_not_present("#memory")
         # In some distros systemctl is showing memory current as [Not Set] for user units
-        if not user or m.image not in ["rhel-8-7", "rhel-8-8", "centos-8-stream"]:
+        if not user or m.image not in ["rhel-8-7", "rhel-8-8", "rhel-8-9", "centos-8-stream"]:
             self.run_systemctl(user, "start mem-hog.service")
             # If the test fails before we stop the mem-hog the next test run will not get the correct memory usage here
             self.addCleanup(self.run_systemctl, user, "stop mem-hog.service || true")
+            b.wait_visible("#memory .pf-c-description-list__text")
             initial_memory = float(b.text("#memory .pf-c-description-list__text").split(" ")[0])
             self.assertGreater(initial_memory, 0.5)
             m.execute(f"touch /tmp/continue{params}")
@@ -630,14 +632,20 @@ ExecStart=/bin/awk -f /tmp/mem-hog{params}.awk
         # Check that listen is not shown for .service units
         b.wait_not_present("#listen")
 
-        # Check 'Unit not found' pattern
-        b.go(f'/system/services#/nonexistent{suffix}')
-        b.wait_in_text(".pf-c-empty-state", "Unit not found")
+        # Check empty state error for nonexisent unit with valid name
+        b.go(f'/system/services#/nonexistent.service{suffix}')
+        b.wait_in_text(".pf-c-empty-state", "Unit nonexistent.service not found")
         b.click("a:contains('View all services')")
         b.switch_to_top()
         b.wait_js_cond('window.location.pathname == "/system/services"')
         if user:
             b.wait_js_cond(f"window.location.hash === '#/{suffix}'")
+
+        # Check empty state error for invalid unit name
+        b.go(f'/system/services#/nonexistent{suffix}')
+        b.enter_page("/system/services")
+        b.wait_in_text(".pf-c-empty-state", "Loading unit failed")
+        b.wait_in_text(".pf-c-empty-state", "Unit name nonexistent is not valid")
 
     def testLogs(self):
         self._testLogs(False)
@@ -1073,8 +1081,8 @@ Where=/fail
         self.login_and_go("/system/services")
         self.wait_page_load()
 
-        m.execute("systemd-run --collect --unit test-autocollect@1.service sh -c 'sleep 10; false'")
-        m.execute("systemd-run --unit test-manual-collect@1.service sh -c 'sleep 3; false'")
+        m.execute("systemd-run --collect --unit test-autocollect@1.service sh -c 'sleep 5; false'")
+        m.execute("systemd-run --unit test-manual-collect@1.service sh -c 'sleep 5; false'")
 
         self.wait_service_present("test-autocollect@1.service")
         self.wait_service_present("test-manual-collect@1.service")
@@ -1096,7 +1104,7 @@ Where=/fail
 
         self.do_action("Stop")
 
-        b.wait_in_text(".pf-c-empty-state", "Unit not found")
+        b.wait_in_text(".pf-c-empty-state", "Unit test-transient.service not found")
         b.click("a:contains('View all services')")
         b.switch_to_top()
         b.wait_js_cond('window.location.pathname == "/system/services"')
@@ -1118,6 +1126,7 @@ Where=/fail
     def testServicesFiltersURLConsistency(self):
         b = self.browser
 
+        # this filter matches nothing
         self.login_and_go("/system/services#/?activestate=[\"Running\"]&filestate=[\"Disabled\"%2C\"Enabled\"]&name=test&type=service&owner=user")
         self.wait_page_load()
 
@@ -1127,6 +1136,12 @@ Where=/fail
         b.wait_visible(".services-text-filter input[value=test]")
         b.wait_visible(".pf-c-nav__list a.pf-m-current:contains(Services)")
         b.wait_visible("#user.pf-m-selected")
+        # there is no running "test" service
+        self.browser.wait_in_text(".pf-c-empty-state", "No matching results")
+        # filter survives a reload, same URL
+        b.reload()
+        b.enter_page("/system/services")
+        self.browser.wait_in_text(".pf-c-empty-state", "No matching results")
 
         # Changing the UI filters should also affect the URL
         b.click("#system")
@@ -1145,6 +1160,112 @@ Where=/fail
         b.wait_visible(".services-text-filter input[value=test]")
         b.click(".services-text-filter button")
         b.wait_js_cond('window.location.hash == "#/"')
+
+        # ensure that there is at least one running service
+        self.make_test_service("/etc/systemd/user")
+        self.run_systemctl(True, "enable --now test.service")
+        b.click("#user")
+        self.wait_service_state("test.service", "active")
+        self.wait_service_state("test.service", "Enabled")
+
+        # drop the name search; all our images have at least stopped and static unit, which should not appear
+        b.go("/system/services#/?activestate=[\"Running\"]&filestate=[\"Disabled\"%2C\"Enabled\"]&type=service&owner=user")
+        self.wait_page_load()
+        b.wait_in_text(".services-list", "Running")
+        # filters out non-matching units
+        self.assertNotIn("Not running", b.text(".services-list"))
+        self.assertNotIn("Static", b.text(".services-list"))
+        # survives a page reload
+        b.reload()
+        b.enter_page("/system/services")
+        b.wait_in_text(".services-list", "Running")
+        self.assertNotIn("Not running", b.text(".services-list"))
+        self.assertNotIn("Static", b.text(".services-list"))
+
+    def testAlias(self):
+        m = self.machine
+        b = self.browser
+        self.write_file("/etc/systemd/system/flower-rose.service",
+                        """
+[Unit]
+Description=Smell sweet
+
+[Service]
+ExecStart=/bin/echo Perfume
+RemainAfterExit=yes
+
+[Install]
+Alias=flower-byanyothername.service
+WantedBy=multi-user.target
+""")
+        m.execute("systemctl enable flower-rose.service")
+        self.addCleanup(m.execute, "systemctl disable --now flower-rose.service")
+
+        self.login_and_go("/system/services#/?name=flower")
+
+        # overview: primary unit
+        self.wait_service_present("flower-rose.service")
+        self.wait_service_in_panel("flower-rose.service", "Enabled")
+        self.wait_service_state("flower-rose.service", "inactive")
+
+        # overview: alias
+        self.wait_service_present("flower-byanyothername.service")
+        if m.image.startswith("rhel-8") or m.image.startswith("centos-8"):
+            # old systemd does not have unit file state "alias" yet
+            self.wait_service_in_panel("flower-byanyothername.service", "Enabled")
+        else:
+            self.wait_service_in_panel("flower-byanyothername.service", "Alias")
+        # runtime status of aliases is unknown in list view
+        self.wait_service_state("flower-byanyothername.service", "")
+
+        # both react to state changes
+        m.execute("systemctl start flower-byanyothername.service")
+        self.wait_service_state("flower-rose.service", "active")
+        self.wait_service_state("flower-byanyothername.service", "")
+
+        # details: primary unit
+        self.goto_service("flower-rose.service")
+        b.wait_in_text("#statuses", "Running")
+        b.wait_in_text("#statuses", "Automatically starts")
+        b.wait_in_text("#service-details-unit", "/etc/systemd/system/flower-rose.service")
+        b.wait_in_text('.cockpit-log-panel .pf-c-card__body', "Perfume")
+
+        # details: alias
+        b.click(".pf-c-breadcrumb a:contains('Services')")
+        self.goto_service("flower-byanyothername.service")
+        b.wait_in_text("#statuses", "Running")
+        b.wait_in_text("#statuses", "Automatically starts")
+        b.wait_in_text("#service-details-unit", "/etc/systemd/system/flower-rose.service")
+        b.wait_in_text('.cockpit-log-panel .pf-c-card__body', "Perfume")
+
+    def testUnprivileged(self):
+        b = self.browser
+        m = self.machine
+
+        self.make_test_service()
+
+        self.login_and_go("/system/services", superuser=False)
+        self.wait_page_load()
+
+        # service list
+        self.wait_service_in_panel("NetworkManager.service", "Enabled")
+        self.wait_service_state("NetworkManager.service", "active")
+        self.wait_service_in_panel("test.service", "Disabled")
+        self.wait_service_state("test.service", "inactive")
+        # reacts to changes
+        m.execute("systemctl start test.service")
+        self.wait_service_state("test.service", "active")
+
+        # details page
+        self.goto_service("test.service")
+        self.check_service_details(["Read-only", "Running"], [], False, onoff=False, kebab=False)
+        b.wait_in_text("#service-details-unit", "/etc/systemd/system/test.service")
+        # unprivileged users cannot read the system journal on all OSes; only check it on Fedora, where we know it's allowed
+        if m.image.startswith("fedora"):
+            b.wait_in_text('.cockpit-log-panel .pf-c-card__body', "WORKING")
+        # reacts to changes
+        m.execute("systemctl stop test.service")
+        self.check_service_details(["Read-only", "Disabled"], [], False, onoff=False, kebab=False)
 
 
 @skipDistroPackage()
@@ -1177,9 +1298,6 @@ class TestTimers(MachineCase):
             "busctl get-property org.freedesktop.timedate1 /org/freedesktop/timedate1 org.freedesktop.timedate1 NTP"))
         m.execute("timedatectl set-time '2036-01-01 12:00:00'")
         m.reboot()
-
-        # FIXME: this page is too slow
-        b.wait_timeout(30)
 
         m.execute("timedatectl set-time '2036-01-01 15:30:00'")
         self.login_and_go("/system/services")

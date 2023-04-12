@@ -19,9 +19,11 @@
 
 import os
 import time
+import unittest
 
 import parent  # noqa: F401
 from testlib import MachineCase, nondestructive, skipDistroPackage, skipImage, todoPybridge, test_main
+from testvm import DEFAULT_IMAGE
 
 
 def allow_old_cockpit_ws_messages(test):
@@ -29,7 +31,7 @@ def allow_old_cockpit_ws_messages(test):
     test.allow_journal_messages("logged in user session",
                                 "New connection to session from.*",
                                 "pam_unix(polkit-1:session): session opened for user root by .*uid=.*",
-                                "admin: Executing command .*COMMAND=/usr/bin/cockpit-bridge --privileged.*")
+                                "admin: Executing command .*COMMAND=.*cockpit-bridge --privileged.*")
 
 
 @nondestructive
@@ -212,6 +214,10 @@ session include system-auth
         b.wait_not_present(".pf-c-modal-box:contains('Problem becoming administrator')")
         b.check_superuser_indicator("Limited access")
 
+    @unittest.skipIf(
+        os.environ.get("TEST_SCENARIO") == "pybridge" and
+        (DEFAULT_IMAGE.startswith("centos-8") or DEFAULT_IMAGE.startswith("rhel-8")),
+        "regression from https://github.com/cockpit-project/cockpit/pull/18398")
     def testRemoveBridgeConfig(self):
         m = self.machine
         b = self.browser
@@ -484,6 +490,7 @@ class TestSuperuserDashboard(MachineCase):
     @todoPybridge()
     def test(self):
         b = self.browser
+        self.setup_provisioned_hosts()
 
         self.login_and_go()
         b.go("/@10.111.113.2")
@@ -548,6 +555,7 @@ class TestSuperuserOldDashboard(MachineCase):
 
         allow_old_cockpit_ws_messages(self)
         self.allow_hostkey_messages()
+        self.setup_provisioned_hosts()
 
         m.execute("firewall-cmd --add-service cockpit")
         m.start_cockpit()
@@ -608,6 +616,7 @@ class TestSuperuserDashboardOldMachine(MachineCase):
     def test(self):
         b = self.browser
 
+        self.setup_provisioned_hosts()
         self.login_and_go()
         b.go("/@10.111.113.2")
         b.wait_visible("#machine-troubleshoot")

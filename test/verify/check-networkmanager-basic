@@ -234,9 +234,7 @@ class TestNetworkingBasic(NetworkCase):
         assert_stopped(True)
         b.click("#networking-nm-crashed a")
         b.enter_page("/system/services")
-        # FIXME: Services page is too slow
-        with b.wait_timeout(30):
-            b.wait_text(".service-name", "Network Manager")
+        b.wait_text(".service-name", "Network Manager")
         b.click(".service-top-panel .pf-c-dropdown button")
         b.click(".service-top-panel .pf-c-dropdown__menu a:contains('Start')")
         b.wait_in_text("#statuses", "Running")
@@ -253,8 +251,8 @@ class TestNetworkingBasic(NetworkCase):
         assert_running()
         wait(lambda: m.execute("systemctl is-enabled NetworkManager"))
 
-        # /usr in coreos is readonly
-        if m.image not in ["fedora-coreos", "rhel4edge"]:
+        # /usr in ostree is readonly
+        if not m.ostree_image:
             # remove the NM service file, test 'no-found' notification
             # This works for ND tests since there is a self.addCleanup(m.execute, "systemctl enable --now NetworkManager") in the start of the test
             self.restore_file('/usr/lib/systemd/system/NetworkManager.service')

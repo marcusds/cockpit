@@ -22,22 +22,21 @@ import cockpit from "cockpit";
 import { get_init_superuser_for_options } from "./machines/machines";
 import * as credentials from "credentials";
 
-import ssh_show_default_key_sh from "raw-loader!./machines/ssh-show-default-key.sh";
-import ssh_add_key_sh from "raw-loader!./machines/ssh-add-key.sh";
+import ssh_show_default_key_sh from "./machines/ssh-show-default-key.sh";
+import ssh_add_key_sh from "./machines/ssh-add-key.sh";
 
 import React from 'react';
 import PropTypes from 'prop-types';
 
-import {
-    Alert,
-    Button,
-    Checkbox,
-    Form, FormGroup,
-    Modal,
-    Radio,
-    Stack,
-    TextInput,
-} from '@patternfly/react-core';
+import { Alert } from "@patternfly/react-core/dist/esm/components/Alert/index.js";
+import { Button } from "@patternfly/react-core/dist/esm/components/Button/index.js";
+import { Checkbox } from "@patternfly/react-core/dist/esm/components/Checkbox/index.js";
+import { ClipboardCopy } from "@patternfly/react-core/dist/esm/components/ClipboardCopy/index.js";
+import { Form, FormGroup } from "@patternfly/react-core/dist/esm/components/Form/index.js";
+import { Modal } from "@patternfly/react-core/dist/esm/components/Modal/index.js";
+import { Radio } from "@patternfly/react-core/dist/esm/components/Radio/index.js";
+import { Stack } from "@patternfly/react-core/dist/esm/layouts/Stack/index.js";
+import { TextInput } from "@patternfly/react-core/dist/esm/components/TextInput/index.js";
 
 import { ModalError } from "cockpit-components-inline-notification.jsx";
 
@@ -118,10 +117,10 @@ class AddMachine extends React.Component {
         this.state = {
             user: host_user || "",
             address: host_address || "",
-            color: color,
+            color,
             addressError: "",
             inProgress: false,
-            old_machine: old_machine,
+            old_machine,
             userChanged: false,
         };
 
@@ -155,7 +154,7 @@ class AddMachine extends React.Component {
                 else if (!this.state.userChanged)
                     this.setState({ user: machine.user, color: this.rgb2Hex(machine.color) });
             } else if (this.state.old_machine && !machine && !this.state.userChanged) { // When editing host by changing its address generate new color
-                this.setState({ color: this.props.machines_ins.unused_color(), userChanged: true });
+                this.setState((_, prevProps) => ({ color: prevProps.machines_ins.unused_color(), userChanged: true }));
             }
         }
 
@@ -250,7 +249,7 @@ class AddMachine extends React.Component {
         const body = <Form isHorizontal>
             <FormGroup label={_("Host")} helperText={_("Can be a hostname, IP address, alias name, or ssh:// URI")}
                 validated={this.state.addressError ? "error" : "default"} helperTextInvalid={this.state.addressError}>
-                <TextInput id="add-machine-address" onChange={address => this.setState({ address: address })}
+                <TextInput id="add-machine-address" onChange={address => this.setState({ address })}
                         validated={this.state.addressError ? "error" : "default"} onBlur={this.onAddressChange}
                         isDisabled={this.props.old_address === "localhost"} list="options" value={this.state.address} />
                 <datalist id="options">
@@ -465,10 +464,10 @@ class HostKey extends React.Component {
             body = <>
                 <Alert variant='danger' isInline title={_("Changed keys are often the result of an operating system reinstallation. However, an unexpected change may indicate a third-party attempt to intercept your connection.")} />
                 <p>{_("To ensure that your connection is not intercepted by a malicious third-party, please verify the host key fingerprint:")}</p>
-                <pre className="hostkey-fingerprint">{fp}</pre>
+                <ClipboardCopy isReadOnly hoverTip={_("Copy")} clickTip={_("Copied")} className="hostkey-fingerprint pf-u-font-family-monospace">{fp}</ClipboardCopy>
                 <p className="hostkey-type">({key_type})</p>
                 <p>{cockpit.format(_("To verify a fingerprint, run the following on $0 while physically sitting at the machine or through a trusted network:"), this.props.host)}</p>
-                <pre className="hostkey-verify-help-cmds">ssh-keyscan -t {key_type} localhost | ssh-keygen -lf -</pre>
+                <ClipboardCopy isReadOnly hoverTip={_("Copy")} clickTip={_("Copied")} className="hostkey-verify-help-cmds pf-u-font-family-monospace">ssh-keyscan -t {key_type} localhost | ssh-keygen -lf -</ClipboardCopy>
                 <p>{_("The resulting fingerprint is fine to share via public methods, including email.")}</p>
                 <p>{_("If the fingerprint matches, click 'Accept key and connect'. Otherwise, do not connect and contact your administrator.")}</p>
             </>;
@@ -476,10 +475,10 @@ class HostKey extends React.Component {
             body = <>
                 <p>{cockpit.format(_("You are connecting to $0 for the first time."), this.props.host)}</p>
                 <p>{_("To ensure that your connection is not intercepted by a malicious third-party, please verify the host key fingerprint:")}</p>
-                <pre className="hostkey-fingerprint">{fp}</pre>
+                <ClipboardCopy isReadOnly hoverTip={_("Copy")} clickTip={_("Copied")} className="hostkey-fingerprint pf-u-font-family-monospace">{fp}</ClipboardCopy>
                 <p className="hostkey-type">({key_type})</p>
                 <p>{cockpit.format(_("To verify a fingerprint, run the following on $0 while physically sitting at the machine or through a trusted network:"), this.props.host)}</p>
-                <pre className="hostkey-verify-help-cmds">ssh-keyscan -t {key_type} localhost | ssh-keygen -lf -</pre>
+                <ClipboardCopy isReadOnly hoverTip={_("Copy")} clickTip={_("Copied")} className="hostkey-verify-help-cmds pf-u-font-family-monospace">ssh-keyscan -t {key_type} localhost | ssh-keygen -lf -</ClipboardCopy>
                 <p>{_("The resulting fingerprint is fine to share via public methods, including email.")}</p>
                 <p>{_("If the fingerprint matches, click 'Accept key and connect'. Otherwise, do not connect and contact your administrator.")}</p>
             </>;
@@ -553,7 +552,7 @@ class ChangeAuth extends React.Component {
         if (default_ssh_key && default_ssh_key.encrypted)
             default_ssh_key.unaligned_passphrase = identity_path && identity_path === default_ssh_key.name;
 
-        this.setState({ identity_path: identity_path, default_ssh_key: default_ssh_key });
+        this.setState({ identity_path, default_ssh_key });
     }
 
     componentDidMount() {
@@ -568,7 +567,7 @@ class ChangeAuth extends React.Component {
                                 else
                                     default_ssh_key = { name: user.home + "/.ssh/id_rsa", type: "rsa", exists: false };
 
-                                return this.setState({ inProgress: false, default_ssh_key: default_ssh_key, user: user }, this.updateIdentity);
+                                return this.setState({ inProgress: false, default_ssh_key, user }, this.updateIdentity);
                             })
                 )
                 .catch(ex => { this.setState({ inProgress: false }); this.props.setError(ex) });
@@ -621,8 +620,8 @@ class ChangeAuth extends React.Component {
         }
 
         return {
-            offer_login_password: offer_login_password,
-            offer_key_password: offer_key_password,
+            offer_login_password,
+            offer_key_password,
         };
     }
 
@@ -635,7 +634,7 @@ class ChangeAuth extends React.Component {
 
     authorize_key(host) {
         return this.keys.get_pubkey(this.state.default_ssh_key.name)
-                .then(data => cockpit.script(ssh_add_key_sh, [data.trim()], { host: host, err: "message" }));
+                .then(data => cockpit.script(ssh_add_key_sh, [data.trim()], { host, err: "message" }));
     }
 
     maybe_unlock_key() {
@@ -692,10 +691,10 @@ class ChangeAuth extends React.Component {
 
         if (custom_password_error || locked_identity_password_error || login_setup_new_key_password_error || login_setup_new_key_password2_error) {
             this.setState({
-                custom_password_error: custom_password_error,
-                locked_identity_password_error: locked_identity_password_error,
-                login_setup_new_key_password_error: login_setup_new_key_password_error,
-                login_setup_new_key_password2_error: login_setup_new_key_password2_error,
+                custom_password_error,
+                locked_identity_password_error,
+                login_setup_new_key_password_error,
+                login_setup_new_key_password2_error,
             });
             return;
         }
@@ -708,7 +707,7 @@ class ChangeAuth extends React.Component {
                     return this.props.try2Connect(this.props.full_address, options)
                             .then(() => {
                                 if (machine)
-                                    return this.props.machines_ins.change(machine.address, { user: user });
+                                    return this.props.machines_ins.change(machine.address, { user });
                                 else
                                     return Promise.resolve();
                             })
@@ -913,7 +912,7 @@ export class HostModal extends React.Component {
 
     changeContent(template, error_options) {
         if (this.state.current_template !== template)
-            this.setState({ current_template: template, error_options: error_options });
+            this.setState({ current_template: template, error_options });
     }
 
     try2Connect(address, options) {
@@ -967,7 +966,7 @@ export class HostModal extends React.Component {
     }
 
     setAddress(address) {
-        this.setState({ address: address });
+        this.setState({ address });
     }
 
     run(promise, failure_callback) {
@@ -1010,7 +1009,7 @@ export class HostModal extends React.Component {
         const template = this.state.current_template;
 
         const props = {
-            template: template,
+            template,
             host: this.addressOrLabel(),
             full_address: this.state.address,
             old_address: this.state.old_address,

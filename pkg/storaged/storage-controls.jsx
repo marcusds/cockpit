@@ -19,11 +19,10 @@
 
 import React, { useState } from 'react';
 
-import {
-    Button, Dropdown, DropdownItem, DropdownToggle, KebabToggle,
-    Tooltip, TooltipPosition,
-    Switch,
-} from '@patternfly/react-core';
+import { Button } from "@patternfly/react-core/dist/esm/components/Button/index.js";
+import { Dropdown, DropdownItem, DropdownToggle, KebabToggle } from "@patternfly/react-core/dist/esm/components/Dropdown/index.js";
+import { Tooltip, TooltipPosition } from "@patternfly/react-core/dist/esm/components/Tooltip/index.js";
+import { Switch } from "@patternfly/react-core/dist/esm/components/Switch/index.js";
 import { BarsIcon } from '@patternfly/react-icons';
 
 import cockpit from "cockpit";
@@ -170,7 +169,7 @@ export class StorageOnOff extends React.Component {
                         .finally(() => { self.setState({ promise: null }) });
             }
 
-            self.setState({ promise: promise, promise_goal_state: val });
+            self.setState({ promise, promise_goal_state: val });
         }
 
         return (
@@ -216,8 +215,8 @@ export const StorageUsageBar = ({ stats, critical, block, offset, total, small }
         </div>);
 };
 
-export const StorageMenuItem = ({ onClick, onlyNarrow, children }) => (
-    <DropdownItem className={onlyNarrow ? "show-only-when-narrow" : null}
+export const StorageMenuItem = ({ onClick, onlyNarrow, danger, children }) => (
+    <DropdownItem className={(onlyNarrow ? "show-only-when-narrow" : "") + (danger ? " delete-resource-red" : "")}
                   onKeyPress={checked(onClick)}
                   onClick={checked(onClick)}>
         {children}

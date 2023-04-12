@@ -19,8 +19,8 @@
 
 import cockpit from "cockpit";
 
-import lister from "raw-loader!credentials-ssh-private-keys.sh";
-import remove_key from "raw-loader!credentials-ssh-remove-key.sh";
+import lister from "credentials-ssh-private-keys.sh";
+import remove_key from "credentials-ssh-remove-key.sh";
 
 const _ = cockpit.gettext;
 
@@ -172,7 +172,7 @@ function Keys() {
 
         key.fingerprint = parts[1];
 
-        if (parts[2] && !key.name && parts[2].indexOf("/") !== -1)
+        if (!key.name && parts[2] && parts[2].indexOf("/") !== -1)
             key.name = parts[2];
     }
 

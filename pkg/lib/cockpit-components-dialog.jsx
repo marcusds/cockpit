@@ -21,7 +21,12 @@ import cockpit from "cockpit";
 import React from "react";
 import { createRoot } from "react-dom/client";
 import PropTypes from "prop-types";
-import { Alert, Button, Modal, Popover, Spinner, Stack, StackItem } from "@patternfly/react-core";
+import { Alert } from "@patternfly/react-core/dist/esm/components/Alert/index.js";
+import { Button } from "@patternfly/react-core/dist/esm/components/Button/index.js";
+import { Modal } from "@patternfly/react-core/dist/esm/components/Modal/index.js";
+import { Popover } from "@patternfly/react-core/dist/esm/components/Popover/index.js";
+import { Spinner } from "@patternfly/react-core/dist/esm/components/Spinner/index.js";
+import { Stack, StackItem } from "@patternfly/react-core/dist/esm/layouts/Stack/index.js";
 import { HelpIcon, ExternalLinkAltIcon } from '@patternfly/react-icons';
 
 import "cockpit-components-dialog.scss";
@@ -123,8 +128,8 @@ class DialogFooter extends React.Component {
     }
 
     render() {
-        const cancel_text = ('cancel_button' in this.props && this.props.cancel_button.text) ? this.props.cancel_button.text : _("Cancel");
-        const cancel_variant = ('cancel_button' in this.props && this.props.cancel_button.variant) ? this.props.cancel_button.variant : "link";
+        const cancel_text = this.props?.cancel_button?.text ?? _("Cancel");
+        const cancel_variant = this.props?.cancel_button?.variant ?? "link";
 
         // If an action is in progress, show the spinner with its message and disable all actions.
         // Cancel is only enabled when the action promise has a cancel method, or we get one
@@ -154,12 +159,17 @@ class DialogFooter extends React.Component {
             else
                 caption = _("Ok");
 
+            let variant = action.style || "secondary";
+            if (variant == "primary" && action.danger)
+                variant = "danger";
+
             return (<Button
                 key={ caption }
                 className="apply"
-                variant={ action.style || "secondary" }
+                variant={ variant }
+                isDanger={ action.danger }
                 onClick={ this.action_click.bind(this, action.clicked) }
-                isDisabled={ actions_disabled || ('disabled' in action && action.disabled) }
+                isDisabled={ actions_disabled || action?.disabled }
             >{ caption }</Button>
             );
         });
@@ -223,8 +233,9 @@ class Dialog extends React.Component {
                 </Button>
             </Popover>;
 
-        const error_alert = this.props.error &&
-            <Alert variant='danger' isInline title={React.isValidElement(this.props.error) ? this.props.error : this.props.error.toString() }>{this.props.error.details}</Alert>;
+        const error = this.props.error || this.props.static_error;
+        const error_alert = error &&
+            <Alert variant='danger' isInline title={React.isValidElement(error) ? error : error.toString() }>{error.details}</Alert>;
 
         return (
             <Modal position="top" variant={this.props.variant || "medium"}
@@ -236,7 +247,6 @@ class Dialog extends React.Component {
                    help={help}
                    footer={this.props.footer} title={this.props.title}>
                 <Stack hasGutter>
-                    { this.props.static_error}
                     { error_alert }
                     <StackItem>
                         { this.props.body }
@@ -315,7 +325,7 @@ export function show_modal_dialog(props, footerProps) {
             dialogObj.footerProps.dialog_done = closeCallback;
         }
         dialogObj.footerProps.set_error = e => {
-            error = e === 'object' && e != null ? (e.message || e.toString()) : e;
+            error = typeof e === 'object' && e !== null ? (e.message || e.toString()) : e;
             dialogObj.render();
         };
         updateFooterAndRender();
@@ -334,8 +344,8 @@ export function show_modal_dialog(props, footerProps) {
 }
 
 export function apply_modal_dialog(event) {
-    const dialog = event && event.target && event.target.closest("[role=dialog]");
-    const button = dialog && dialog.querySelector("button.apply");
+    const dialog = event?.target?.closest("[role=dialog]");
+    const button = dialog?.querySelector("button.apply");
 
     if (button) {
         const event = new MouseEvent('click', {

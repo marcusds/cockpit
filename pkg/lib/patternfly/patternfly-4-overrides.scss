@@ -87,7 +87,7 @@ svg {
   // Make sure that the buttons always appear in the next line from the inline alerts
   .pf-c-modal-box__footer {
     flex-wrap: wrap;
-    gap: var(--pf-global--spacer--sm);
+    row-gap: var(--pf-global--spacer--sm);
 
     > div:not(.pf-c-button):not(.dialog-wait-ct) {
       flex: 0 0 100%;
@@ -99,7 +99,7 @@ svg {
   // https://github.com/patternfly/patternfly/issues/3959
   --pf-c-card__header-toggle--MarginTop: 0;
 
-  .pf-c-card__header:not(.ct-card-expandable-header){
+  .pf-c-card__header:not(.ct-card-expandable-header) {
     // upstream fix (pending): https://github.com/patternfly/patternfly/pull/3714
     flex-wrap: wrap;
     row-gap: var(--pf-global--spacer--sm);
@@ -116,28 +116,6 @@ svg {
       padding-left: unset;
     }
   }
-}
-
-// Alignment of checks is incorrect and inconsistent across browsers
-// Upstream issue: https://github.com/patternfly/patternfly/issues/3868
-.pf-c-check > .pf-c-check__input {
-  // Set the height of the input widget to be the same as its label
-  --pf-c-check__input--Height: var(--pf-c-check__label--FontSize);
-  // Offset by the top half of the difference between the height and the line height
-  --pf-c-check__input--MarginTop: calc((var(--pf-c-check__label--LineHeight) - 1) / 2 * var(--pf-c-check__input--Height));
-  // PF3 sets a margin which messes with PF4, so set PF4's rule again here (Cockpit-specific mix of PF3+PF4)
-  margin-top: var(--pf-c-check__input--MarginTop);
-}
-
-// Alignment of checks is incorrect and inconsistent across browsers
-// Upstream issue: https://github.com/patternfly/patternfly/issues/3868
-.pf-c-radio > .pf-c-radio__input {
-  // Set the height of the input widget to be the same as its label
-  --pf-c-radio__input--Height: var(--pf-c-radio__label--FontSize);
-  // Offset by the top half of the difference between the height and the line height
-  --pf-c-radio__input--MarginTop: calc((var(--pf-c-radio__label--LineHeight) - 1) / 2 * var(--pf-c-radio__input--Height));
-  // PF3 sets a margin which messes with PF4, so set PF4's rule again here (Cockpit-specific mix of PF3+PF4)
-  margin-top: var(--pf-c-radio__input--MarginTop);
 }
 
 // Add some spacing to nested form groups - PF4 does not support these yet
@@ -293,7 +271,7 @@ svg {
     }
   }
 
-    // PatternFly doesn't define gold color in dark mode
+  // PatternFly doesn't define gold color in dark mode
   .pf-c-label {
     --pf-c-label--m-gold--BackgroundColor: var(--pf-global--BackgroundColor--300);
     --pf-c-label--m-gold__content--Color: var(--pf-global--palette--gold-100);

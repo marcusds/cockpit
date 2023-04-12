@@ -21,7 +21,10 @@ import cockpit from "cockpit";
 
 import React, { useState } from "react";
 import { ListingTable } from "cockpit-components-table.jsx";
-import { Button, Label, Split, SplitItem, Modal } from '@patternfly/react-core';
+import { Button } from "@patternfly/react-core/dist/esm/components/Button/index.js";
+import { Label } from "@patternfly/react-core/dist/esm/components/Label/index.js";
+import { Split, SplitItem } from "@patternfly/react-core/dist/esm/layouts/Split/index.js";
+import { Modal } from "@patternfly/react-core/dist/esm/components/Modal/index.js";
 import { useDialogs } from "dialogs.jsx";
 import { useInit } from "hooks";
 
@@ -35,8 +38,8 @@ export const ActivePagesDialog = ({ frames }) => {
                 const iframe = frames.iframes[address][component];
                 result.push({
                     frame: iframe,
-                    component: component,
-                    address: address,
+                    component,
+                    address,
                     name: iframe.getAttribute("name"),
                     active: iframe.getAttribute("data-active") === 'true',
                     selected: iframe.getAttribute("data-active") === 'true',

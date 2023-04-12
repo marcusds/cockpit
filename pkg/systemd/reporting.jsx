@@ -19,7 +19,10 @@
 
 import cockpit from "cockpit";
 import React from "react";
-import { Button, Card, CardBody, CardTitle, Split, SplitItem, Spinner } from "@patternfly/react-core";
+import { Button } from "@patternfly/react-core/dist/esm/components/Button/index.js";
+import { Card, CardBody, CardTitle } from "@patternfly/react-core/dist/esm/components/Card/index.js";
+import { Split, SplitItem } from "@patternfly/react-core/dist/esm/layouts/Split/index.js";
+import { Spinner } from "@patternfly/react-core/dist/esm/components/Spinner/index.js";
 import { ExternalLinkAltIcon } from "@patternfly/react-icons";
 import { show_modal_dialog } from "cockpit-components-dialog.jsx";
 
@@ -115,7 +118,7 @@ class FAFWorkflowRow extends React.Component {
                     if (reported) {
                         this.setState({
                             problemState: ProblemState.REPORTED,
-                            reportLinks: reportLinks,
+                            reportLinks,
                         });
                     }
                 });
@@ -146,7 +149,7 @@ class FAFWorkflowRow extends React.Component {
 
         this.setState({
             problemState: ProblemState.REPORTING,
-            process: process,
+            process,
         });
     }
 
@@ -286,7 +289,7 @@ class BusWorkflowRow extends React.Component {
                     task_proxy.addEventListener("Progress", (event, message) => {
                         if (/^\.+$/.exec(message) === null) {
                             // abrt-retrace-client starts printing dots if the last message it receives is repeated
-                            this.setState({ message: message, });
+                            this.setState({ message, });
                         }
                     });
 
@@ -327,7 +330,7 @@ class BusWorkflowRow extends React.Component {
                     const message = cockpit.format("reportd task could not be created: $0", (exception.problem || exception.message));
 
                     this.setState({
-                        message: message,
+                        message,
                         problemState: ProblemState.REPORTABLE,
                     });
                     console.error(message);
@@ -375,7 +378,7 @@ class BusWorkflowRow extends React.Component {
             if (reported) {
                 this.setState({
                     problemState: ProblemState.REPORTED,
-                    reportLinks: reportLinks,
+                    reportLinks,
                 });
             }
         };

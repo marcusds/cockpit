@@ -19,13 +19,11 @@
 
 import React, { useState } from 'react';
 
-import {
-    Alert, AlertActionCloseButton,
-    Button,
-    Modal,
-    Stack,
-    TextArea
-} from '@patternfly/react-core';
+import { Alert, AlertActionCloseButton } from "@patternfly/react-core/dist/esm/components/Alert/index.js";
+import { Button } from "@patternfly/react-core/dist/esm/components/Button/index.js";
+import { Modal } from "@patternfly/react-core/dist/esm/components/Modal/index.js";
+import { Stack } from "@patternfly/react-core/dist/esm/layouts/Stack/index.js";
+import { TextArea } from "@patternfly/react-core/dist/esm/components/TextArea/index.js";
 import { EditIcon } from '@patternfly/react-icons';
 import { ModalError } from 'cockpit-components-inline-notification.jsx';
 import { superuser } from "superuser";
@@ -63,7 +61,7 @@ const MotdEditDialog = ({ text }) => {
                            {_("Save changes")}
                        </Button>
                        <Button variant='link'
-                               onClick={() => this.setState({ motdEditMode: false })}>
+                               onClick={Dialogs.close}>
                            {_("Cancel")}
                        </Button>
                    </>

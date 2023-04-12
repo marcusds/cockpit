@@ -20,7 +20,7 @@
 import parent  # noqa: F401
 from packagelib import PackageCase
 from storagelib import StorageCase, StorageHelpers
-from testlib import nondestructive, skipImage, test_main
+from testlib import nondestructive, skipOstree, test_main
 
 
 @nondestructive
@@ -298,7 +298,7 @@ class TestStorageNfs(StorageCase):
 
 
 # Re-use allowed journal messages from StorageCase
-@skipImage("No udisks/cockpit-storaged on OSTree images", "fedora-coreos", "rhel4edge")
+@skipOstree("No udisks/cockpit-storaged on OSTree images")
 @nondestructive
 class TestStoragePackagesNFS(PackageCase, StorageCase, StorageHelpers):
 
@@ -309,9 +309,8 @@ class TestStoragePackagesNFS(PackageCase, StorageCase, StorageHelpers):
         # Override configuration so that we don't have to remove the
         # real package.
 
-        self.machine.write("/usr/share/cockpit/storaged/override.json",
+        self.machine.write("/etc/cockpit/storaged.override.json",
                            """{ "config": { "nfs_client_package": "fake-nfs-utils" } }""")
-        self.addCleanup(self.machine.execute, "rm /usr/share/cockpit/storaged/override.json")
 
         if m.execute("if test -e /sbin/mount.nfs; then echo yes; fi").strip():
             m.execute("mv /sbin/mount.nfs /sbin/mount.nfs.off")

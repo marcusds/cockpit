@@ -4,10 +4,11 @@ import '../lib/patternfly/patternfly-4-cockpit.scss';
 
 import React from "react";
 import { createRoot } from "react-dom/client";
-import {
-    FormSelect, FormSelectOption, NumberInput,
-    Toolbar, ToolbarContent, ToolbarItem, ToolbarGroup
-} from "@patternfly/react-core";
+import { FormSelect, FormSelectOption } from "@patternfly/react-core/dist/esm/components/FormSelect/index.js";
+import { NumberInput } from "@patternfly/react-core/dist/esm/components/NumberInput/index.js";
+import { Toolbar, ToolbarContent, ToolbarGroup, ToolbarItem } from "@patternfly/react-core/dist/esm/components/Toolbar/index.js";
+
+import "./terminal.scss";
 
 import { Terminal } from "cockpit-components-terminal.jsx";
 
@@ -39,8 +40,27 @@ const _ = cockpit.gettext;
 
         constructor(props) {
             super(props);
-            const theme = document.cookie.replace(/(?:(?:^|.*;\s*)theme_cookie\s*=\s*([^;]*).*$)|^.*$/, "$1");
-            const size = document.cookie.replace(/(?:(?:^|.*;\s*)size_cookie\s*=\s*([^;]*).*$)|^.*$/, "$1");
+
+            let theme = localStorage.getItem('terminal:theme');
+            let size = localStorage.getItem('terminal:font-size');
+            // HACK: Try to read the configuration from localStorage, if it does not exists fall back
+            // to the old configuration stored in a browser's cookie. After enough time has been
+            // passed this can be dropped.
+            if (theme === null || theme === "") {
+                theme = document.cookie.replace(/(?:(?:^|.*;\s*)theme_cookie\s*=\s*([^;]*).*$)|^.*$/, "$1");
+                if (theme !== "") {
+                    localStorage.setItem('terminal:theme', theme);
+                    this.invalidateCookie("theme_cookie");
+                }
+            }
+            if (size === null || size === "") {
+                size = document.cookie.replace(/(?:(?:^|.*;\s*)size_cookie\s*=\s*([^;]*).*$)|^.*$/, "$1");
+                if (size !== "") {
+                    localStorage.setItem('terminal:font-size', size);
+                    this.invalidateCookie("size_cookie");
+                }
+            }
+
             this.state = {
                 title: 'Terminal',
                 theme: theme || "black-theme",
@@ -61,37 +81,37 @@ const _ = cockpit.gettext;
 
         componentDidMount() {
             cockpit.user().done(function (user) {
-                this.setState({ user: user, channel: this.createChannel(user) });
+                this.setState({ user, channel: this.createChannel(user) });
             }.bind(this));
         }
 
         onTitleChanged(title) {
-            this.setState({ title: title });
+            this.setState({ title });
         }
 
-        setCookie(key, value) {
-            const cookie = key + "=" + encodeURIComponent(value) +
-                         "; path=/; expires=Sun, 16 Jul 3567 06:23:41 GMT";
+        invalidateCookie(key) {
+            const cookie = key + "=''" +
+                         "; path=/; Max-Age=0;";
             document.cookie = cookie;
         }
 
         onPlus() {
             this.setState((state, _) => {
-                this.setCookie("size_cookie", state.size + 1);
+                localStorage.setItem('terminal:font-size', state.size + 1);
                 return { size: state.size + 1 };
             });
         }
 
         onMinus() {
             this.setState((state, _) => {
-                this.setCookie("size_cookie", state.size - 1);
+                localStorage.setItem('terminal:font-size', state.size - 1);
                 return { size: state.size - 1 };
             });
         }
 
         onThemeChanged(value) {
             this.setState({ theme: value });
-            this.setCookie("theme_cookie", value);
+            localStorage.setItem('terminal:theme', value);
         }
 
         onResetClick(event) {
@@ -99,7 +119,7 @@ const _ = cockpit.gettext;
                 return;
 
             if (!this.state.channel.valid && this.state.user)
-                this.setState({ channel: this.createChannel(this.state.user) });
+                this.setState(prevState => ({ channel: this.createChannel(prevState.user) }));
             else
                 this.terminalRef.current.reset();
 

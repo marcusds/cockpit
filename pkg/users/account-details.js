@@ -22,19 +22,24 @@ import React, { useState, useEffect, useRef } from 'react';
 import { superuser } from "superuser";
 import { apply_modal_dialog } from "cockpit-components-dialog.jsx";
 
-import {
-    Button, Checkbox,
-    Card, CardBody, CardHeader, CardTitle, CardActions,
-    EmptyState, EmptyStateVariant, EmptyStateIcon, EmptyStateSecondaryActions,
-    Flex,
-    HelperText, HelperTextItem,
-    Label, LabelGroup,
-    Page, PageSection,
-    Gallery, Select, SelectOption, SelectVariant, Text, TextVariants, Breadcrumb, BreadcrumbItem,
-    Form, FormGroup, TextInput,
-    Spinner,
-    Title, Popover
-} from '@patternfly/react-core';
+import { Button } from "@patternfly/react-core/dist/esm/components/Button/index.js";
+import { Checkbox } from "@patternfly/react-core/dist/esm/components/Checkbox/index.js";
+import { Card, CardActions, CardBody, CardHeader, CardTitle } from "@patternfly/react-core/dist/esm/components/Card/index.js";
+import { EmptyState, EmptyStateIcon, EmptyStateSecondaryActions, EmptyStateVariant } from "@patternfly/react-core/dist/esm/components/EmptyState/index.js";
+import { Flex } from "@patternfly/react-core/dist/esm/layouts/Flex/index.js";
+import { HelperText, HelperTextItem } from "@patternfly/react-core/dist/esm/components/HelperText/index.js";
+import { Label } from "@patternfly/react-core/dist/esm/components/Label/index.js";
+import { LabelGroup } from "@patternfly/react-core/dist/esm/components/LabelGroup/index.js";
+import { Page, PageSection } from "@patternfly/react-core/dist/esm/components/Page/index.js";
+import { Gallery } from "@patternfly/react-core/dist/esm/layouts/Gallery/index.js";
+import { Select, SelectOption, SelectVariant } from "@patternfly/react-core/dist/esm/components/Select/index.js";
+import { Text, TextVariants } from "@patternfly/react-core/dist/esm/components/Text/index.js";
+import { Breadcrumb, BreadcrumbItem } from "@patternfly/react-core/dist/esm/components/Breadcrumb/index.js";
+import { Form, FormGroup } from "@patternfly/react-core/dist/esm/components/Form/index.js";
+import { TextInput } from "@patternfly/react-core/dist/esm/components/TextInput/index.js";
+import { Spinner } from "@patternfly/react-core/dist/esm/components/Spinner/index.js";
+import { Title } from "@patternfly/react-core/dist/esm/components/Title/index.js";
+import { Popover } from "@patternfly/react-core/dist/esm/components/Popover/index.js";
 import { ExclamationCircleIcon, HelpIcon, UndoIcon } from '@patternfly/react-icons';
 import { show_unexpected_error } from "./dialog-utils.js";
 import { delete_account_dialog } from "./delete-account-dialog.js";
@@ -47,7 +52,7 @@ import * as timeformat from "timeformat.js";
 const _ = cockpit.gettext;
 
 function get_locked(name) {
-    return cockpit.spawn(["/usr/bin/passwd", "-S", name], { environ: ["LC_ALL=C"], superuser: "require" })
+    return cockpit.spawn(["passwd", "-S", name], { environ: ["LC_ALL=C"], superuser: "require" })
             .catch(() => "")
             .then(content => {
                 const status = content.split(" ")[1];
@@ -88,13 +93,13 @@ function get_expire(name) {
 
         return {
             account_text: account_expiration,
-            account_date: account_date,
+            account_date,
             password_text: password_expiration,
-            password_days: password_days
+            password_days
         };
     }
 
-    return cockpit.spawn(["/usr/bin/chage", "-l", name],
+    return cockpit.spawn(["chage", "-l", name],
                          { environ: ["LC_ALL=C"], err: "message", superuser: "try" })
             .catch(() => "")
             .then(parse_expire);
@@ -167,7 +172,7 @@ export function AccountDetails({ accounts, groups, shadow, current_user, user })
     }
 
     function logout_account() {
-        cockpit.spawn(["/usr/bin/loginctl", "terminate-user", user],
+        cockpit.spawn(["loginctl", "terminate-user", user],
                       { superuser: "try", err: "message" })
                 .then(() => {
                     get_expire(user).then(setExpiration);
@@ -275,68 +280,68 @@ export function AccountDetails({ accounts, groups, shadow, current_user, user })
                                     <output id="account-last-login">{last_login}</output>
                                 </FormGroup>
                                 <FormGroup fieldId="account-locked" label={_("Options")} hasNoPaddingTop>
-                                    <div>
-                                        <div className="account-column-one">
-                                            <Flex spaceItems={{ default: 'spaceItemsSm' }} alignItems={{ default: 'alignItemsCenter' }}>
-                                                <Checkbox id="account-locked"
-                                                          isDisabled={!superuser.allowed || edited_locked != null || user == current_user}
-                                                          isChecked={edited_locked != null ? edited_locked : account.isLocked}
-                                                          onChange={checked => change_locked(checked)}
-                                                          label={_("Disallow interactive password")} />
+                                    <Flex spaceItems={{ default: 'spaceItemsSm' }} alignItems={{ default: 'alignItemsCenter' }}>
+                                        <Flex className="accounts-column-one" spaceItems={{ default: 'spaceItemsSm' }} alignItems={{ default: 'alignItemsCenter' }}>
+                                            <Checkbox id="account-locked"
+                                                        isDisabled={!superuser.allowed || edited_locked != null || user == current_user}
+                                                        isChecked={edited_locked != null ? edited_locked : account.isLocked}
+                                                        onChange={checked => change_locked(checked)}
+                                                        label={_("Disallow interactive password")} />
 
-                                                <Popover bodyContent={_("Other authentication methods are still available even when interactive password authentication is not allowed.")}
-                                                         showClose={false}>
-                                                    <HelpIcon />
-                                                </Popover>
-                                            </Flex>
-                                        </div>
-                                        <Flex flex={{ default: 'inlineFlex' }}>
-                                            <span id="account-expiration-text">
-                                                {expiration.account_text}
-                                            </span>
-                                            <Button onClick={() => account_expiration_dialog(account, expiration.account_date)}
-                                                    isDisabled={!superuser.allowed}
-                                                    variant="link"
-                                                    isInline
-                                                    id="account-expiration-button">
-                                                {_("edit")}
-                                            </Button>
+                                            <Popover bodyContent={_("Other authentication methods are still available even when interactive password authentication is not allowed.")}
+                                                        showClose={false}>
+                                                <HelpIcon />
+                                            </Popover>
                                         </Flex>
-                                    </div>
+                                        <span id="account-expiration-text">
+                                            {expiration.account_text}
+                                        </span>
+                                        <Button onClick={() => account_expiration_dialog(account, expiration.account_date)}
+                                                isDisabled={!superuser.allowed}
+                                                variant="link"
+                                                isInline
+                                                id="account-expiration-button">
+                                            {_("edit")}
+                                        </Button>
+                                    </Flex>
                                 </FormGroup>
                                 { self_mod_allowed &&
                                 <FormGroup fieldId="account-set-password" label={_("Password")}>
-                                    <div>
-                                        <div className="account-column-one">
-                                            { self_mod_allowed &&
-                                            <Button variant="secondary" id="account-set-password"
-                                      onClick={() => set_password_dialog(account, current_user)}>
-                                                {_("Set password")}
-                                            </Button>
-                                            }
-                                            { "\n" }
-                                            { superuser.allowed &&
-                                            <Button variant="secondary" id="password-reset-button"
-                                              onClick={() => reset_password_dialog(account)}>
-                                                {_("Force change")}
-                                            </Button>
-                                            }
-                                        </div>
-                                        <Flex flex={{ default: 'inlineFlex' }}>
-                                            <span id="password-expiration-text">
-                                                {expiration.password_text}
-                                            </span>
-                                            <Button onClick={() => password_expiration_dialog(account, expiration.password_days)}
-                                                    isDisabled={!superuser.allowed}
-                                                    variant="link"
-                                                    isInline
-                                                    id="password-expiration-button">
-                                                {_("edit")}
-                                            </Button>
-                                        </Flex>
+                                    <div className="account-column-one">
+                                        { self_mod_allowed &&
+                                        <Button variant="secondary" id="account-set-password"
+                                    onClick={() => set_password_dialog(account, current_user)}>
+                                            {_("Set password")}
+                                        </Button>
+                                        }
+                                        { "\n" }
+                                        { superuser.allowed &&
+                                        <Button variant="secondary" id="password-reset-button"
+                                            onClick={() => reset_password_dialog(account)}>
+                                            {_("Force change")}
+                                        </Button>
+                                        }
                                     </div>
+                                    <Flex flex={{ default: 'inlineFlex' }}>
+                                        <span id="password-expiration-text">
+                                            {expiration.password_text}
+                                        </span>
+                                        <Button onClick={() => password_expiration_dialog(account, expiration.password_days)}
+                                                isDisabled={!superuser.allowed}
+                                                variant="link"
+                                                isInline
+                                                id="password-expiration-button">
+                                            {_("edit")}
+                                        </Button>
+                                    </Flex>
                                 </FormGroup>
                                 }
+                                { account.home && <FormGroup fieldId="account-home-dir" hasNoPaddingTop label={_("Home directory")}>
+                                    <output id="account-home-dir">{account.home}</output>
+                                </FormGroup> }
+                                { account.shell && <FormGroup fieldId="account-shell" hasNoPaddingTop label={_("Shell")}>
+                                    <output id="account-shell">{account.shell}</output>
+                                </FormGroup> }
                             </Form>
                         </CardBody>
                     </Card>
@@ -359,7 +364,7 @@ export const AccountGroupsSelect = ({ name, loggedIn, groups, setError }) => {
     useEffect(() => {
         const usedGroups = groups.filter(group => group.userlist.includes(name));
         const primaryGroup = groups.find(group => group.userlistPrimary.includes(name));
-        const _primaryGroupName = primaryGroup ? primaryGroup.name : undefined;
+        const _primaryGroupName = primaryGroup?.name;
         const _selected = usedGroups.map(group => group.name);
         if (primaryGroup)
             _selected.push(_primaryGroupName);
@@ -384,7 +389,7 @@ export const AccountGroupsSelect = ({ name, loggedIn, groups, setError }) => {
             setHistory([...history, { type: 'removed', name: group }]);
 
         setLoading(true);
-        return cockpit.spawn(["/usr/bin/gpasswd", "-d", name, group], { superuser: "require", err: "message" })
+        return cockpit.spawn(["gpasswd", "-d", name, group], { superuser: "require", err: "message" })
                 .then(() => {
                     setIsOpenGroup(false);
                 }, show_unexpected_error);
@@ -395,7 +400,7 @@ export const AccountGroupsSelect = ({ name, loggedIn, groups, setError }) => {
             setHistory([...history, { type: 'added', name: group }]);
 
         setLoading(true);
-        return cockpit.spawn(["/usr/bin/gpasswd", "-a", name, group], { superuser: "require", err: "message" })
+        return cockpit.spawn(["gpasswd", "-a", name, group], { superuser: "require", err: "message" })
                 .then(() => {
                     setIsOpenGroup(false);
                 }, show_unexpected_error);

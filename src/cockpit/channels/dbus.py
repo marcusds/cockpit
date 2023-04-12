@@ -17,8 +17,6 @@
 
 # Missing stuff compared to the C bridge that we should probably add:
 #
-# - connecting to given address instead of bus
-# - some more ways to connect to the internal bus (like { bus: "none", address: "internal" })
 # - removing matches
 # - removing watches
 # - emitting of signals
@@ -43,8 +41,7 @@ import logging
 import traceback
 import xml.etree.ElementTree as ET
 
-from systemd_ctypes import Bus, BusError, introspection
-
+from .._vendor.systemd_ctypes import Bus, BusError, introspection
 from ..channel import Channel, ChannelError
 
 logger = logging.getLogger(__name__)
@@ -162,13 +159,12 @@ class InterfaceCache:
 
 
 def notify_update(notify, path, interface_name, props):
-    notify.setdefault(path, {})[interface_name] = {k: v['v'] for k, v in props.items()}
+    notify.setdefault(path, {})[interface_name] = {k: v.value for k, v in props.items()}
 
 
 class DBusChannel(Channel):
     payload = 'dbus-json3'
 
-    tasks = None
     matches = None
     name = None
     bus = None
@@ -218,11 +214,16 @@ class DBusChannel(Channel):
         self.cache = InterfaceCache()
         self.name = options.get('name')
         self.matches = []
-        self.tasks = set()
 
         bus = options.get('bus')
+        address = options.get('address')
 
-        if bus == 'internal':
+        if address is not None:
+            if bus is not None and bus != 'none':
+                raise ChannelError('protocol-error', message='only one of "bus" and "address" can be specified')
+            logger.debug('get bus with address %s for %s', address, self.name)
+            self.bus = Bus.new(address=address, bus_client=self.name is not None)
+        elif bus == 'internal':
             logger.debug('get internal bus for %s', self.name)
             self.bus = self.router.internal_bus.client
         else:
@@ -230,9 +231,11 @@ class DBusChannel(Channel):
                 if bus == 'session':
                     logger.debug('get session bus for %s', self.name)
                     self.bus = Bus.default_user()
-                else:
+                elif bus == 'system' or bus is None:
                     logger.debug('get system bus for %s', self.name)
                     self.bus = Bus.default_system()
+                else:
+                    raise ChannelError('protocol-error', message=f'invalid bus "{bus}"')
             except OSError as exc:
                 raise ChannelError('protocol-error', message=f'failed to connect to {bus} bus: {exc}') from exc
 
@@ -254,9 +257,7 @@ class DBusChannel(Channel):
                         self.ready(unique_name=self.owner)
                     else:
                         self.close(problem="not-found")
-            task = asyncio.create_task(get_ready())
-            self.tasks.add(task)
-            task.add_done_callback(self.tasks.discard)
+            self.create_task(get_ready())
         else:
             self.ready()
 
@@ -279,13 +280,20 @@ class DBusChannel(Channel):
         else:
             func = handler
         r_string = ','.join(f"{key}='{value}'" for key, value in r.items())
-        self.matches.append(self.bus.add_match(r_string, func))
+        if not self.is_closing():
+            # this gets an EINTR very often especially on RHEL 8
+            while True:
+                try:
+                    match = self.bus.add_match(r_string, func)
+                    break
+                except InterruptedError:
+                    pass
+
+            self.matches.append(match)
 
     def add_async_signal_handler(self, handler, **kwargs):
         def sync_handler(message):
-            task = asyncio.create_task(handler(message))
-            self.tasks.add(task)
-            task.add_done_callback(self.tasks.discard)
+            self.create_task(handler(message))
         self.add_signal_handler(sync_handler, **kwargs)
 
     async def do_call(self, message):
@@ -408,9 +416,14 @@ class DBusChannel(Channel):
                 name, props, invalids = message.get_body()
                 logger.debug('NOTIFY: %s %s %s %s', path, name, props, invalids)
                 for inv in invalids:
-                    reply, = await self.bus.call_method_async(self.name, path,
-                                                              'org.freedesktop.DBus.Properties', 'Get',
-                                                              'ss', name, inv)
+                    try:
+                        reply, = await self.bus.call_method_async(self.name, path,
+                                                                  'org.freedesktop.DBus.Properties', 'Get',
+                                                                  'ss', name, inv)
+                    except BusError as exc:
+                        logger.debug('failed to fetch property %s.%s on %s %s: %s',
+                                     name, inv, self.name, path, str(exc))
+                        continue
                     props[inv] = reply
                 notify = {}
                 notify_update(notify, path, name, props)
@@ -477,19 +490,19 @@ class DBusChannel(Channel):
         logger.debug('receive dbus request %s %s', self.name, message)
 
         if 'call' in message:
-            task = asyncio.create_task(self.do_call(message))
+            self.create_task(self.do_call(message))
         elif 'add-match' in message:
-            task = asyncio.create_task(self.do_add_match(message))
+            self.create_task(self.do_add_match(message))
         elif 'watch' in message:
-            task = asyncio.create_task(self.do_watch(message))
+            self.create_task(self.do_watch(message))
         elif 'meta' in message:
-            task = asyncio.create_task(self.do_meta(message))
+            self.create_task(self.do_meta(message))
         else:
             logger.debug('ignored dbus request %s', message)
             return
 
-        self.tasks.add(task)
-        task.add_done_callback(self.tasks.discard)
-
     def do_close(self):
+        for slot in self.matches:
+            slot.cancel()
+        self.matches = None  # error out
         self.close()

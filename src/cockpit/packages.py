@@ -29,7 +29,7 @@ import shutil
 from pathlib import Path
 from typing import ClassVar, Dict, List, Optional, Pattern, Tuple
 
-from systemd_ctypes import bus
+from ._vendor.systemd_ctypes import bus
 
 from . import config
 
@@ -56,7 +56,7 @@ def directory_items(path):
 # HACK: We eventually want to get rid of all ${libexecdir} in manifests:
 # - rewrite cockpit-{ssh,pcp} in Python and import them as module instead of exec'ing
 # - rewrite cockpit-askpass in Python and write it into a temporary file
-# - bundle helper shell scripts into their webpacks
+# - bundle helper shell scripts
 # Until then, we need this libexecdir detection hack.
 LIBEXECDIR = None
 
@@ -264,6 +264,30 @@ class Package:
                 return False
 
             if self.manifest['priority'] <= at_least_prio:
+                return False
+
+        CONDITIONS = {
+            'path-exists': os.path.exists,
+            'path-not-exists': lambda p: not os.path.exists(p),
+        }
+
+        for condition in self.manifest.get('conditions', []):
+            try:
+                (predicate, value), = condition.items()
+            except (AttributeError, ValueError):
+                # ignore manifests with broken syntax
+                logger.warning('invalid condition in %s: %s', self.path, condition)
+                return False
+
+            try:
+                test_fn = CONDITIONS[predicate]
+            except KeyError:
+                # do *not* ignore manifests with unknown predicates, for forward compatibility
+                logger.warning('ignoring unknown predicate in %s: %s', self.path, predicate)
+                continue
+
+            if not test_fn(value):
+                logger.info('Hiding package %s as its %s condition is not met', self.path, condition)
                 return False
 
         return True

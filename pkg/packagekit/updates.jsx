@@ -24,21 +24,26 @@ import cockpit from "cockpit";
 import React from "react";
 import { createRoot } from 'react-dom/client';
 
-import {
-    Alert, Badge, Button, Gallery, Modal, Popover, Tooltip,
-    Card, CardTitle, CardActions, CardHeader, CardBody,
-    DescriptionList, DescriptionListTerm, DescriptionListGroup, DescriptionListDescription,
-    ExpandableSection,
-    Flex, FlexItem,
-    Grid, GridItem,
-    LabelGroup,
-    Page, PageSection, PageSectionVariants,
-    Progress, ProgressSize,
-    Spinner,
-    Stack, StackItem,
-    Switch,
-    Text, TextContent, TextListItem, TextList, TextVariants,
-} from '@patternfly/react-core';
+import { Alert } from "@patternfly/react-core/dist/esm/components/Alert/index.js";
+import { Badge } from "@patternfly/react-core/dist/esm/components/Badge/index.js";
+import { Button } from "@patternfly/react-core/dist/esm/components/Button/index.js";
+import { CodeBlock, CodeBlockCode } from "@patternfly/react-core/dist/esm/components/CodeBlock/index.js";
+import { Gallery } from "@patternfly/react-core/dist/esm/layouts/Gallery/index.js";
+import { Modal } from "@patternfly/react-core/dist/esm/components/Modal/index.js";
+import { Popover } from "@patternfly/react-core/dist/esm/components/Popover/index.js";
+import { Tooltip } from "@patternfly/react-core/dist/esm/components/Tooltip/index.js";
+import { Card, CardActions, CardBody, CardHeader, CardTitle } from "@patternfly/react-core/dist/esm/components/Card/index.js";
+import { DescriptionList, DescriptionListDescription, DescriptionListGroup, DescriptionListTerm } from "@patternfly/react-core/dist/esm/components/DescriptionList/index.js";
+import { ExpandableSection } from "@patternfly/react-core/dist/esm/components/ExpandableSection/index.js";
+import { Flex, FlexItem } from "@patternfly/react-core/dist/esm/layouts/Flex/index.js";
+import { Grid, GridItem } from "@patternfly/react-core/dist/esm/layouts/Grid/index.js";
+import { LabelGroup } from "@patternfly/react-core/dist/esm/components/LabelGroup/index.js";
+import { Page, PageSection, PageSectionVariants } from "@patternfly/react-core/dist/esm/components/Page/index.js";
+import { Progress, ProgressSize } from "@patternfly/react-core/dist/esm/components/Progress/index.js";
+import { Spinner } from "@patternfly/react-core/dist/esm/components/Spinner/index.js";
+import { Stack, StackItem } from "@patternfly/react-core/dist/esm/layouts/Stack/index.js";
+import { Switch } from "@patternfly/react-core/dist/esm/components/Switch/index.js";
+import { Text, TextContent, TextList, TextListItem, TextVariants } from "@patternfly/react-core/dist/esm/components/Text/index.js";
 
 import {
     BugIcon,
@@ -69,7 +74,9 @@ import * as PK from "packagekit.js";
 import * as timeformat from "timeformat.js";
 
 import * as python from "python.js";
-import callTracerScript from 'raw-loader!./callTracer.py';
+import callTracerScript from './callTracer.py';
+
+import "./updates.scss";
 
 const _ = cockpit.gettext;
 
@@ -590,7 +597,7 @@ const ApplyUpdates = ({ transactionProps, actions, onCancel, rebootAfter, setReb
                     <div className="progress-description">
                         <Spinner isSVG size="md" />
                         <strong>{ PK_STATUS_STRINGS[lastAction?.status] || PK_STATUS_STRINGS[PK.Enum.STATUS_UPDATE] }</strong>
-                        &nbsp;{formatPackageId(curPackage)}
+                        &nbsp;{curPackage}
                     </div>
                     <Progress title={remain}
                               value={percentage}
@@ -870,7 +877,7 @@ class CardsPage extends React.Component {
     }
 
     componentDidMount() {
-        getBackend().then(b => { this.setState({ autoupdates_backend: b }) });
+        getBackend(this.props.backend).then(b => { this.setState({ autoupdates_backend: b }) });
     }
 
     render() {
@@ -888,7 +895,7 @@ class CardsPage extends React.Component {
 
         if (this.state.autoupdates_backend) {
             settingsContent = <Stack hasGutter>
-                <AutoUpdates privileged={this.props.privileged} />
+                <AutoUpdates privileged={this.props.privileged} packagekit_backend={this.props.backend} />
                 <KpatchSettings privileged={this.props.privileged} />
             </Stack>;
         }
@@ -1060,7 +1067,7 @@ class OsUpdates extends React.Component {
                     tracerPackages.reboot = [...new Set(shortenCockpitWsInstance(tracerPackages.reboot))];
                     tracerPackages.daemons = [...new Set(shortenCockpitWsInstance(tracerPackages.daemons))];
                     tracerPackages.manual = [...new Set(shortenCockpitWsInstance(tracerPackages.manual))];
-                    const nextState = { tracerAvailable: true, tracerRunning: false, tracerPackages: tracerPackages };
+                    const nextState = { tracerAvailable: true, tracerRunning: false, tracerPackages };
                     if (state)
                         nextState.state = state;
 
@@ -1127,7 +1134,7 @@ class OsUpdates extends React.Component {
                 u.vendor_urls = vendor_urls || [];
                 // u.restart = restart; // broken (always "1") at least in Fedora
 
-                this.setState({ updates: this.state.updates });
+                this.setState(prevState => ({ updates: prevState.updates }));
             },
         })
                 .then(() => {
@@ -1183,7 +1190,7 @@ class OsUpdates extends React.Component {
                     // get the details for all packages
                     const pkg_ids = Object.keys(updates);
                     if (pkg_ids.length) {
-                        this.setState({ updates, cockpitUpdate: cockpitUpdate }, () => {
+                        this.setState({ updates, cockpitUpdate }, () => {
                             this.loadUpdateDetails(pkg_ids);
                         });
                     } else {
@@ -1222,7 +1229,7 @@ class OsUpdates extends React.Component {
             // only update the state once to avoid flicker
             Finished: () => {
                 if (history.length > 0)
-                    this.setState({ history: history });
+                    this.setState({ history });
             }
         })
                 .catch(ex => console.warn("Failed to load old transactions:", ex));
@@ -1464,25 +1471,26 @@ class OsUpdates extends React.Component {
                 type: "error",
                 title: STATE_HEADINGS[this.state.state],
             });
-
             return (
-                <>
+                <Stack>
                     <EmptyStatePanel title={ STATE_HEADINGS[this.state.state] }
-                                     icon={ ExclamationCircleIcon }
-                                     paragraph={
-                                         <TextContent>
-                                             <Text component={TextVariants.p}>
-                                                 {this.state.errorMessages
-                                                         .filter((m, index) => index == 0 || m != this.state.errorMessages[index - 1])
-                                                         .map(m => <span key={m}>{m}</span>)}
-                                             </Text>
-                                             <Text component={TextVariants.p}>
-                                                 {_("Please reload the page after resolving the issue.")}
-                                             </Text>
-                                         </TextContent>
-                                     }
+                                    icon={ ExclamationCircleIcon }
+                                    paragraph={
+                                        <TextContent>
+                                            <Text component={TextVariants.p}>
+                                                {_("Please resolve the issue and reload this page.")}
+                                            </Text>
+                                        </TextContent>
+                                    }
                     />
-                </>
+                    <CodeBlock className='pf-u-mx-auto error-log'>
+                        <CodeBlockCode>
+                            {this.state.errorMessages
+                                    .filter((m, index) => index == 0 || m != this.state.errorMessages[index - 1])
+                                    .map(m => <span key={m}>{m}</span>)}
+                        </CodeBlockCode>
+                    </CodeBlock>
+                </Stack>
             );
 
         case "applying":

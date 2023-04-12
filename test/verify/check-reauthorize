@@ -17,14 +17,22 @@
 # You should have received a copy of the GNU Lesser General Public License
 # along with Cockpit; If not, see <http://www.gnu.org/licenses/>.
 
+import os
+import unittest
+
 import parent  # noqa: F401
-from testlib import MachineCase, nondestructive, skipDistroPackage, skipImage, test_main
+from testlib import MachineCase, nondestructive, skipDistroPackage, skipOstree, test_main
+from testvm import DEFAULT_IMAGE
 
 
 @skipDistroPackage()
 @nondestructive
 class TestReauthorize(MachineCase):
 
+    @unittest.skipIf(
+        os.environ.get("TEST_SCENARIO") == "pybridge" and
+        (DEFAULT_IMAGE.startswith("centos-8") or DEFAULT_IMAGE.startswith("rhel-8")),
+        "regression from https://github.com/cockpit-project/cockpit/pull/18398")
     def testBasic(self):
         self.allow_journal_messages('.*dropping message while waiting for child to exit.*')
         b = self.browser
@@ -53,16 +61,16 @@ class TestReauthorize(MachineCase):
         m.execute("touch /tmp/playground-test-lock")
         b.click(".lock-channel button")
         b.wait_in_text(".lock-channel span", 'locked')
-        m.execute("! flock -n /tmp/playground-test-lock true")
+        m.execute("! flock --nonblock /tmp/playground-test-lock true")
 
         # Deauthorize user
         b.drop_superuser()
-        m.execute("flock -n /tmp/playground-test-lock true")
+        m.execute("flock --timeout 10 /tmp/playground-test-lock true")
         b.click(".cockpit-internal-reauthorize button")
         b.wait_in_text(".cockpit-internal-reauthorize span", 'result:')
         self.assertEqual(b.text(".cockpit-internal-reauthorize span"), 'result: access-denied')
 
-    @skipImage("ssh root login not allowed", "fedora-coreos", "rhel4edge")
+    @skipOstree("ssh root login not allowed")
     def testSuper(self):
         b = self.browser
 

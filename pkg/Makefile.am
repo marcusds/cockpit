@@ -4,22 +4,6 @@ pkg_TESTS = \
 
 TESTS += $(pkg_TESTS)
 
-%.metainfo.xml: %.metainfo.xml.in
-	$(AM_V_GEN) mkdir -p $(dir $@) && msgfmt --xml -d $(top_srcdir)/po --template $< --output $@
-
-metainfodir = ${datarootdir}/metainfo
-nodist_metainfo_DATA = \
-	pkg/sosreport/org.cockpit-project.cockpit-sosreport.metainfo.xml \
-	pkg/kdump/org.cockpit-project.cockpit-kdump.metainfo.xml \
-	pkg/selinux/org.cockpit-project.cockpit-selinux.metainfo.xml \
-	pkg/storaged/org.cockpit-project.cockpit-storaged.metainfo.xml \
-	pkg/networkmanager/org.cockpit-project.cockpit-networkmanager.metainfo.xml \
-	$(NULL)
-
-metainfo_in = $(patsubst %,%.in,$(nodist_metainfo_DATA))
-EXTRA_DIST += $(metainfo_in)
-CLEANFILES += $(nodist_metainfo_DATA)
-
 pixmapsdir = ${datarootdir}/pixmaps
 pixmaps_DATA = pkg/sosreport/cockpit-sosreport.png
 
@@ -38,13 +22,31 @@ dist_pcpmanifest_DATA = pkg/pcp/manifest.json
 sshmanifestdir = $(datadir)/cockpit/ssh
 dist_sshmanifest_DATA = pkg/ssh/manifest.json
 
-include pkg/build
+# one built file in dist/ which we use as dependency
+DIST_STAMP = $(srcdir)/dist/static/manifest.json
 
-# automake doesn't support stripping initial path components (ie: `dist`) with
-# `nobase_`, so we create a cockpit/ symlink and use that instead.
-# That way, the files land in $(datadir)/cockpit/ and `dist` is avoided.
-all-local:: cockpit
-cockpit:
-	$(AM_V_GEN) ln -sf $(srcdir)/dist $@
+# dynamic pkg → dist dependency, to rebuild the bundles if any web related file changes
+# exclude automake unit test log files
+PKG_INPUTS = $(shell find $(srcdir)/pkg -type f ! -name 'test*.trs' ! -name 'test*.log')
 
-nobase_data_DATA = $(patsubst dist/%,cockpit/%,$(WEBPACK_INSTALL))
+V_BUNDLE = $(V_BUNDLE_$(V))
+V_BUNDLE_ = $(V_BUNDLE_$(AM_DEFAULT_VERBOSITY))
+V_BUNDLE_0 = @echo "  BUNDLE   dist";
+
+# delete the stamp first; neither webpack nor esbuild touch it if the contents didn't change,
+# but this is just a representative for all of dist/*
+$(DIST_STAMP): $(srcdir)/package-lock.json $(PKG_INPUTS)
+	@rm -f $(DIST_STAMP)
+	$(V_BUNDLE) cd $(srcdir) && NODE_ENV='$(NODE_ENV)' tools/termschutz ./build.js
+
+EXTRA_DIST += build.js files.js package.json package-lock.json
+
+# This is how the qunit tests get included.  We need to prevent automake from
+# seeing them during ./autogen.sh, but need make to find them at compile time.
+-include $(wildcard pkg/Makefile.qunit*)
+
+install-data-hook::
+	cd $(srcdir)/dist; find -type f -exec install -D -m 644 '{}' '$(DESTDIR)$(datadir)/cockpit/{}' \;
+
+uninstall-hook:
+	rm -rf $(DESTDIR)$(datadir)/cockpit

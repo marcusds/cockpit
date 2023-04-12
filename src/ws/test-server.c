@@ -722,6 +722,8 @@ server_ready (void)
                     G_CALLBACK (on_handle_resource), NULL);
   g_signal_connect (server, "handle-resource::/dist/",
                     G_CALLBACK (on_handle_source), NULL);
+  g_signal_connect (server, "handle-resource::/qunit/",
+                    G_CALLBACK (on_handle_source), NULL);
   g_signal_connect (server, "handle-resource::/favicon.ico",
                     G_CALLBACK (on_handle_favicon), NULL);
   g_signal_connect (server, "handle-resource::/mock/",
@@ -747,7 +749,7 @@ server_ready (void)
       g_print ("**********************************************************************\n"
            "Please connect a supported web browser to\n"
            "\n"
-           " %s/dist/base1/test-dbus.html\n"
+           " %s/qunit/base1/test-dbus.html\n"
            "\n"
            "and check that the test suite passes. Press Ctrl+C to exit.\n"
            "**********************************************************************\n"

@@ -18,7 +18,7 @@
  */
 
 function debug() {
-    if (window.debugging == "all" || window.debugging == "style") {
+    if (window.debugging == "all" || window.debugging?.includes("style")) {
         console.debug([`cockpit-dark-theme: ${document.documentElement.id}:`, ...arguments].join(" "));
     }
 }
@@ -37,7 +37,7 @@ function _setDarkMode(_style) {
     const style = _style || localStorage.getItem('shell:style') || 'auto';
     let dark_mode;
     // If a user set's an explicit theme, ignore system changes.
-    if ((window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches && style === "auto") || style === "dark") {
+    if ((window.matchMedia?.('(prefers-color-scheme: dark)').matches && style === "auto") || style === "dark") {
         dark_mode = true;
     } else {
         dark_mode = false;
@@ -63,7 +63,7 @@ window.addEventListener("cockpit-style", event => {
 });
 
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-    debug(`Operating system theme preference changed to ${window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? "dark" : "light"}`);
+    debug(`Operating system theme preference changed to ${window.matchMedia?.('(prefers-color-scheme: dark)').matches ? "dark" : "light"}`);
     _setDarkMode();
 });
 

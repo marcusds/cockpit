@@ -84,7 +84,7 @@ function is_negative(n) {
 }
 
 function invoke_functions(functions, self, args) {
-    const length = functions ? functions.length : 0;
+    const length = functions?.length ?? 0;
     for (let i = 0; i < length; i++) {
         if (functions[i])
             functions[i].apply(self, args);
@@ -226,7 +226,7 @@ window.addEventListener('beforeunload', function() {
 }, false);
 
 function transport_debug() {
-    if (window.debugging == "all" || window.debugging == "channel")
+    if (window.debugging == "all" || window.debugging?.includes("channel"))
         console.debug.apply(console, arguments);
 }
 
@@ -275,7 +275,7 @@ function event_mixin(obj, handlers) {
                     event = new CustomEvent(type, {
                         bubbles: false,
                         cancelable: false,
-                        detail: detail
+                        detail
                     });
 
                     args.unshift(event);
@@ -294,9 +294,9 @@ function event_mixin(obj, handlers) {
 function calculate_application() {
     let path = window.location.pathname || "/";
     let _url_root = url_root;
-    if (window.mock && window.mock.pathname)
+    if (window.mock?.pathname)
         path = window.mock.pathname;
-    if (window.mock && window.mock.url_root)
+    if (window.mock?.url_root)
         _url_root = window.mock.url_root;
 
     if (_url_root && path.indexOf('/' + _url_root) === 0)
@@ -321,9 +321,9 @@ function calculate_url(suffix) {
     const meta_websocket_root = document.head.querySelector("meta[name='websocket-root']");
     let _url_root = meta_websocket_root ? meta_websocket_root.content.replace(/^\/+|\/+$/g, '') : url_root;
 
-    if (window.mock && window.mock.url)
+    if (window.mock?.url)
         return window.mock.url;
-    if (window.mock && window.mock.url_root)
+    if (window.mock?.url_root)
         _url_root = window.mock.url_root;
 
     let prefix = calculate_application();
@@ -1049,7 +1049,7 @@ function factory() {
         self.encoding = "utf-8";
 
         self.decode = function decode(data, options) {
-            const stream = options && options.stream;
+            const stream = options?.stream;
 
             if (data === null || data === undefined)
                 data = "";
@@ -1167,7 +1167,7 @@ function factory() {
         },
         close: function close(problem) {
             if (default_transport)
-                default_transport.close(problem ? { problem: problem } : undefined);
+                default_transport.close(problem ? { problem } : undefined);
             default_transport = null;
             this.options = { };
         },
@@ -1328,7 +1328,7 @@ function factory() {
         let then;
         let done = false;
         if (is_object(values[0]) || is_function(values[0]))
-            then = values[0] && values[0].then;
+            then = values[0]?.then;
         if (is_function(then)) {
             state.status = -1;
             then.call(values[0], function(/* ... */) {
@@ -1359,7 +1359,7 @@ function factory() {
 
     function deferred_notify(state, values) {
         const callbacks = state.pending;
-        if ((state.status <= 0) && callbacks && callbacks.length) {
+        if ((state.status <= 0) && callbacks?.length) {
             later_invoke(function() {
                 for (let i = 0, ii = callbacks.length; i < ii; i++) {
                     const result = callbacks[i][0];
@@ -1412,7 +1412,7 @@ function factory() {
         let callback_output = null;
         if (is_function(callback))
             callback_output = callback();
-        if (callback_output && is_function(callback_output.then)) {
+        if (is_function(callback_output?.then)) {
             return callback_output.then(function() {
                 return prep_promise(values, is_resolved);
             }, function() {
@@ -1750,7 +1750,7 @@ function factory() {
         };
 
         function unclaim() {
-            if (source && source.close)
+            if (source?.close)
                 source.close();
             source = null;
 
@@ -1993,7 +1993,7 @@ function factory() {
             }
 
             /* Insert our item into the array */
-            const entry = { beg: beg, items: items, mapping: mapping };
+            const entry = { beg, items, mapping };
             if (!head)
                 head = entry;
             if (tail)
@@ -2043,7 +2043,7 @@ function factory() {
                 throw Error("mismatched metric interval between grid and sink");
             let gdata = registered[id];
             if (!gdata) {
-                gdata = registered[id] = { grid: grid, links: [] };
+                gdata = registered[id] = { grid, links: [] };
                 gdata.links.remove = function remove() {
                     delete registered[id];
                 };
@@ -2114,7 +2114,7 @@ function factory() {
         self.close = function () {
             for (const id in registered) {
                 const grid = registered[id];
-                if (grid && grid.grid)
+                if (grid?.grid)
                     grid.grid.remove_sink(self);
             }
         };
@@ -2189,7 +2189,7 @@ function factory() {
 
                 const links = sink._register(self, id);
                 if (!links.length)
-                    sinks.push({ sink: sink, links: links });
+                    sinks.push({ sink, links });
                 links.push([path, row]);
 
             /* Called as add(callback) */
@@ -2460,7 +2460,7 @@ function factory() {
         const application = cockpit.transport.application();
         self.url_root = url_root || "";
 
-        if (window.mock && window.mock.url_root)
+        if (window.mock?.url_root)
             self.url_root = window.mock.url_root;
 
         if (application.indexOf("cockpit+=") === 0) {
@@ -2627,7 +2627,7 @@ function factory() {
         let hash = window.location.hash;
         if (hash.indexOf("#") === 0)
             hash = hash.substring(1);
-        cockpit.hint("location", { hash: hash });
+        cockpit.hint("location", { hash });
         cockpit.dispatchEvent("locationchanged");
     });
 
@@ -2650,7 +2650,7 @@ function factory() {
         if (host === undefined)
             host = cockpit.transport.host;
 
-        const options = { command: "jump", location: path, host: host };
+        const options = { command: "jump", location: path, host };
         cockpit.transport.inject("\n" + JSON.stringify(options));
     };
 
@@ -2737,7 +2737,7 @@ function factory() {
     }
 
     function spawn_debug() {
-        if (window.debugging == "all" || window.debugging == "spawn")
+        if (window.debugging == "all" || window.debugging?.includes("spawn"))
             console.debug.apply(console, arguments);
     }
 
@@ -2819,7 +2819,7 @@ function factory() {
     };
 
     function dbus_debug() {
-        if (window.debugging == "all" || window.debugging == "dbus")
+        if (window.debugging == "all" || window.debugging?.includes("dbus"))
             console.debug.apply(console, arguments);
     }
 
@@ -3028,7 +3028,7 @@ function factory() {
             }
         }
 
-        client.subscribe({ path: path, interface: iface }, signal, options.subscribe !== false);
+        client.subscribe({ path, interface: iface }, signal, options.subscribe !== false);
 
         function waited(ex) {
             if (valid)
@@ -3039,7 +3039,7 @@ function factory() {
 
         /* If watching then do a proper watch, otherwise object is done */
         if (options.watch !== false)
-            client.watch({ path: path, interface: iface }).always(waited);
+            client.watch({ path, interface: iface }).always(waited);
         else
             waited();
     }
@@ -3066,7 +3066,7 @@ function factory() {
         });
 
         /* Subscribe to signals once for all proxies */
-        const match = { interface: iface, path_namespace: path_namespace };
+        const match = { interface: iface, path_namespace };
 
         /* Callbacks added by proxies */
         client.subscribe(match);
@@ -3126,7 +3126,6 @@ function factory() {
 
         let channel = cockpit.channel(args);
         const subscribers = { };
-        const published = { };
         let calls = { };
         let cache;
 
@@ -3144,7 +3143,7 @@ function factory() {
         }
 
         function send(payload) {
-            if (channel && channel.valid) {
+            if (channel?.valid) {
                 dbus_debug("dbus:", payload);
                 channel.send(payload);
                 return true;
@@ -3212,8 +3211,6 @@ function factory() {
                                 subscription.callback.apply(self, msg.signal);
                         }
                     }
-                } else if (msg.call) {
-                    handle(msg.call, msg.id);
                 } else if (msg.notify) {
                     notify(msg.notify);
                 } else if (msg.meta) {
@@ -3241,15 +3238,6 @@ function factory() {
             Object.assign(cache.meta, data);
             self.dispatchEvent("meta", data);
         }
-
-        self.meta = function(data, options) {
-            if (!channel || !channel.valid)
-                return;
-
-            const message = { ...options, meta: data };
-            send(JSON.stringify(message));
-            meta(data);
-        };
 
         function notify(data) {
             ensure_cache();
@@ -3339,7 +3327,7 @@ function factory() {
         this.subscribe = function subscribe(match, callback, rule) {
             const subscription = {
                 match: { ...match },
-                callback: callback
+                callback
             };
 
             if (rule !== false)
@@ -3373,7 +3361,7 @@ function factory() {
             last_cookie++;
             const dfd = cockpit.defer();
 
-            const msg = JSON.stringify({ watch: match, id: id });
+            const msg = JSON.stringify({ watch: match, id });
             if (send(msg))
                 calls[id] = dfd;
             else
@@ -3386,85 +3374,6 @@ function factory() {
                     delete calls[id];
                 }
                 send(JSON.stringify({ unwatch: match }));
-            };
-            return ret;
-        };
-
-        function unknown_interface(path, iface) {
-            const message = "DBus interface " + iface + " not available at " + path;
-            return cockpit.reject(new DBusError(["org.freedesktop.DBus.Error.UnknownInterface", [message]]));
-        }
-
-        function unknown_method(path, iface, method) {
-            const message = "DBus method " + iface + " " + method + " not available at " + path;
-            return cockpit.reject(new DBusError(["org.freedesktop.DBus.Error.UnknownMethod", [message]]));
-        }
-
-        function not_implemented(path, iface, method) {
-            console.warn("method is not implemented properly: ", path, iface, method);
-            return unknown_method(path, iface, method);
-        }
-
-        function invoke(call) {
-            const path = call[0];
-            const iface = call[1];
-            const method = call[2];
-            const object = published[path + "\n" + iface];
-            const info = cache.meta[iface];
-            if (!object || !info)
-                return unknown_interface(path, iface);
-            if (!info.methods || !(method in info.methods))
-                return unknown_method(path, iface, method);
-            if (typeof object[method] != "function")
-                return not_implemented(path, iface, method);
-            return object[method].apply(object, call[3]);
-        }
-
-        function handle(call, cookie) {
-            const result = invoke(call);
-            if (!cookie)
-                return; /* Discard result */
-            cockpit.when(result).then(function() {
-                let out = Array.prototype.slice.call(arguments, 0);
-                if (out.length == 1 && typeof out[0] == "undefined")
-                    out = [];
-                send(JSON.stringify({ reply: [out], id: cookie }));
-            }, function(ex) {
-                const error = [];
-                error[0] = ex.name || " org.freedesktop.DBus.Error.Failed";
-                error[1] = [cockpit.message(ex) || error[0]];
-                send(JSON.stringify({ error: error, id: cookie }));
-            });
-        }
-
-        self.publish = function(path, iface, object, options) {
-            const publish = [path, iface];
-
-            const id = String(last_cookie);
-            last_cookie++;
-            const dfd = calls[id] = cockpit.defer();
-
-            const payload = JSON.stringify({ ...options, publish, id });
-
-            if (send(payload))
-                calls[id] = dfd;
-            else
-                dfd.reject(new DBusError(closed));
-
-            const key = path + "\n" + iface;
-            dfd.promise.then(function() {
-                published[key] = object;
-            });
-
-            /* Return a way to remove this object */
-            const ret = dfd.promise;
-            ret.remove = function remove() {
-                if (id in calls) {
-                    dfd.reject(new DBusError("cancelled"));
-                    delete calls[id];
-                }
-                delete published[key];
-                send(JSON.stringify({ unpublish: publish }));
             };
             return ret;
         };
@@ -3560,28 +3469,28 @@ function factory() {
         const binary = options.binary;
 
         const self = {
-            path: path,
-            read: read,
-            replace: replace,
-            modify: modify,
+            path,
+            read,
+            replace,
+            modify,
 
-            watch: watch,
+            watch,
 
-            close: close
+            close
         };
 
         const base_channel_options = { ...options };
         delete base_channel_options.syntax;
 
         function parse(str) {
-            if (options.syntax && options.syntax.parse)
+            if (options.syntax?.parse)
                 return options.syntax.parse(str);
             else
                 return str;
         }
 
         function stringify(obj) {
-            if (options.syntax && options.syntax.stringify)
+            if (options.syntax?.stringify)
                 return options.syntax.stringify(obj);
             else
                 return obj;
@@ -3598,7 +3507,7 @@ function factory() {
             const opts = {
                 ...base_channel_options,
                 payload: "fsread1",
-                path: path
+                path
             };
 
             function try_read() {
@@ -3667,7 +3576,7 @@ function factory() {
             const opts = {
                 ...base_channel_options,
                 payload: "fsreplace1",
-                path: path,
+                path,
                 tag: expected_tag
             };
             replace_channel = cockpit.channel(opts);
@@ -3738,7 +3647,7 @@ function factory() {
 
                 const opts = {
                     payload: "fswatch1",
-                    path: path,
+                    path,
                     superuser: base_channel_options.superuser,
                 };
                 watch_channel = cockpit.channel(opts);
@@ -3898,7 +3807,7 @@ function factory() {
         const key = context ? context + '\u0004' + string : string;
         if (po_data) {
             const translated = po_data[key];
-            if (translated && translated[1])
+            if (translated?.[1])
                 return translated[1];
         }
         return string;
@@ -3998,7 +3907,7 @@ function factory() {
     }
 
     function http_debug() {
-        if (window.debugging == "all" || window.debugging == "http")
+        if (window.debugging == "all" || window.debugging?.includes("http"))
             console.debug.apply(console, arguments);
     }
 
@@ -4190,10 +4099,10 @@ function factory() {
         self.get = function get(path, params, headers) {
             return self.request({
                 method: "GET",
-                params: params,
-                path: path,
+                params,
+                path,
                 body: "",
-                headers: headers
+                headers
             });
         };
 
@@ -4212,9 +4121,9 @@ function factory() {
 
             return self.request({
                 method: "POST",
-                path: path,
-                body: body,
-                headers: headers
+                path,
+                body,
+                headers
             });
         };
 
@@ -4272,7 +4181,7 @@ function factory() {
         if (options)
             group = options.group;
 
-        if (options && options.admin)
+        if (options?.admin)
             admin = true;
 
         function decide(user) {
@@ -4354,7 +4263,7 @@ function factory() {
 
             const options = {
                 payload: "metrics1",
-                interval: interval,
+                interval,
                 source: "internal",
                 ...options_list[0]
             };
@@ -4454,7 +4363,7 @@ function factory() {
                 mapping = { };
                 meta.metrics.forEach(function(metric, i) {
                     const map = { "": i };
-                    const name = options.metrics_path_names ? options.metrics_path_names[i] : metric.name;
+                    const name = options.metrics_path_names?.[i] ?? metric.name;
                     mapping[name] = map;
                     if (metric.instances) {
                         metric.instances.forEach(function(instance, i) {
@@ -4481,8 +4390,8 @@ function factory() {
                     archive_options_list.push({
                                                    ...options_list[i],
                                                    source: options_list[i].archive_source,
-                                                   timestamp: timestamp,
-                                                   limit: limit
+                                                   timestamp,
+                                                   limit
                                               });
                 }
             }

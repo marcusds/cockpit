@@ -19,7 +19,7 @@
 
 import parent  # noqa: F401
 import time
-from testlib import Error, nondestructive, skipDistroPackage, skipImage, test_main, wait
+from testlib import Error, nondestructive, skipDistroPackage, skipOstree, test_main, wait
 from netlib import NetworkCase
 
 
@@ -46,7 +46,7 @@ def get_active_rules(machine):
     return active_rules
 
 
-@skipImage("no firewalld", "fedora-coreos", "rhel4edge")
+@skipOstree("no firewalld")
 @nondestructive
 @skipDistroPackage()
 class TestFirewall(NetworkCase):
@@ -262,7 +262,8 @@ class TestFirewall(NetworkCase):
         b.assert_pixels(".pf-c-modal-box", "firewall-add-services-to-zone-modal", wait_delay=3)
 
         # don't select anything in the dialog
-        b.click(f"#add-services-dialog footer .{self.btn_primary}")
+        b.wait_visible(f"#add-services-dialog .{self.btn_primary}.pf-m-disabled")
+        b.click("#add-services-dialog footer .btn-cancel")
         b.wait_not_present(".pf-c-modal-box")
 
         def addService(zone, service):

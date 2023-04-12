@@ -22,7 +22,7 @@ import { journal } from "journal";
 import { superuser } from "superuser";
 
 import React from 'react';
-import { Alert, AlertActionCloseButton } from '@patternfly/react-core';
+import { Alert, AlertActionCloseButton } from "@patternfly/react-core/dist/esm/components/Alert/index.js";
 import { EmptyStatePanel } from "cockpit-components-empty-state.jsx";
 import { JournalOutput } from "cockpit-components-logs-panel.jsx";
 import { ExclamationCircleIcon } from '@patternfly/react-icons';
@@ -198,9 +198,9 @@ export class JournalBox extends React.Component {
             count: 0,
             cursor: cursor || null,
             follow: true,
-            grep: grep,
-            priority: priority,
-            until: until,
+            grep,
+            priority,
+            until,
         };
         this.followingProcs.push(journal.journalctl(this.match, journalctlOptions)
                 .fail(this.queryError)
@@ -217,7 +217,7 @@ export class JournalBox extends React.Component {
         // For that we however need newer systemd that includes https://github.com/systemd/systemd/issues/13937
         this.currentServices = new Set();
         const service_options = Object.assign({ output: "verbose" }, options);
-        let cmd = journal.build_cmd(match, service_options)[0];
+        let cmd = journal.build_cmd(match, service_options);
 
         cmd = cmd.map(i => i.replaceAll(" ", "\\ ")).join(" ");
         cmd = "set -o pipefail; " + cmd + " | grep SYSLOG_IDENTIFIER= | sort -u";
@@ -297,8 +297,8 @@ export class JournalBox extends React.Component {
                                  const journalctlOptions = {
                                      cursor: this.state.cursor,
                                      follow: false,
-                                     grep: grep,
-                                     priority: priority,
+                                     grep,
+                                     priority,
                                      reverse: true,
                                  };
                                  this.setState({ didntReachStart: false });

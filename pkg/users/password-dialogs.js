@@ -20,7 +20,8 @@
 import cockpit from 'cockpit';
 import React from 'react';
 import { superuser } from "superuser";
-import { Form, FormGroup, TextInput } from '@patternfly/react-core';
+import { Form, FormGroup } from "@patternfly/react-core/dist/esm/components/Form/index.js";
+import { TextInput } from "@patternfly/react-core/dist/esm/components/TextInput/index.js";
 
 import { has_errors } from "./dialog-utils.js";
 import { show_modal_dialog, apply_modal_dialog } from "cockpit-components-dialog.jsx";
@@ -57,7 +58,7 @@ function passwd_self(old_pass, new_pass) {
             proc.close("timeout");
         }, 10 * 1000);
 
-        const proc = cockpit.spawn(["/usr/bin/passwd"], { pty: true, environ: ["LC_ALL=C"], err: "out" })
+        const proc = cockpit.spawn(["passwd"], { pty: true, environ: ["LC_ALL=C"], err: "out" })
                 .always(function() {
                     window.clearInterval(timeout);
                 })
@@ -136,8 +137,8 @@ function SetPasswordDialogBody({ state, errors, change }) {
             <>
                 <input hidden disabled value={current_user} />
                 <FormGroup label={_("Old password")}
-                           helperTextInvalid={errors && errors.password_old}
-                           validated={(errors && errors.password_old) ? "error" : "default"}
+                           helperTextInvalid={errors?.password_old}
+                           validated={(errors?.password_old) ? "error" : "default"}
                            fieldId="account-set-password-old">
                     <TextInput className="check-passwords" type="password" id="account-set-password-old"
                                autoComplete="current-password" value={password_old} onChange={value => change("password_old", value)} />
@@ -145,8 +146,8 @@ function SetPasswordDialogBody({ state, errors, change }) {
             </> }
             <PasswordFormFields password_label={_("New password")}
                                 password_confirm_label={_("Confirm new password")}
-                                error_password={errors && errors.password}
-                                error_password_confirm={errors && errors.password_confirm}
+                                error_password={errors?.password}
+                                error_password_confirm={errors?.password_confirm}
                                 idPrefix="account-set-password"
                                 change={change} />
         </Form>
@@ -160,7 +161,7 @@ export function set_password_dialog(account, current_user) {
 
     const state = {
         need_old: change_self,
-        current_user: current_user,
+        current_user,
         password_old: "",
         password: "",
         password_confirm: "",
@@ -277,7 +278,7 @@ export function reset_password_dialog(account) {
                 caption: _("Reset password"),
                 style: "primary",
                 clicked: () => {
-                    return cockpit.spawn(["/usr/bin/passwd", "-e", account.name],
+                    return cockpit.spawn(["passwd", "-e", account.name],
                                          { superuser: true, err: "message" });
                 }
             }

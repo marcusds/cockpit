@@ -26,10 +26,10 @@ import {
 import * as utils from "./utils.js";
 
 import React from "react";
-import {
-    Card, CardHeader, CardTitle, CardBody, CardActions, Spinner, Text, TextVariants,
-    DropdownSeparator
-} from "@patternfly/react-core";
+import { Card, CardActions, CardBody, CardHeader, CardTitle } from "@patternfly/react-core/dist/esm/components/Card/index.js";
+import { Spinner } from "@patternfly/react-core/dist/esm/components/Spinner/index.js";
+import { Text, TextVariants } from "@patternfly/react-core/dist/esm/components/Text/index.js";
+import { DropdownSeparator } from "@patternfly/react-core/dist/esm/components/Dropdown/index.js";
 import { ExclamationTriangleIcon } from "@patternfly/react-icons";
 
 import { ListingTable } from "cockpit-components-table.jsx";
@@ -73,7 +73,7 @@ function next_default_logical_volume_name(client, vgroup, prefix) {
     return name;
 }
 
-export function set_crypto_options(block, readonly, auto) {
+export function set_crypto_options(block, readonly, auto, nofail, netdev) {
     return edit_config(block, (config, commit) => {
         const opts = config.options ? parse_options(utils.decode_filename(config.options.v)) : [];
         if (readonly !== null) {
@@ -86,13 +86,23 @@ export function set_crypto_options(block, readonly, auto) {
             if (!auto)
                 opts.push("noauto");
         }
+        if (nofail !== null) {
+            extract_option(opts, "nofail");
+            if (nofail)
+                opts.push("nofail");
+        }
+        if (netdev !== null) {
+            extract_option(opts, "_netdev");
+            if (netdev)
+                opts.push("_netdev");
+        }
         config.options = { t: 'ay', v: utils.encode_filename(unparse_options(opts)) };
         return commit();
     });
 }
 
 export function set_crypto_auto_option(block, flag) {
-    return set_crypto_options(block, null, flag);
+    return set_crypto_options(block, null, flag, null, null);
 }
 
 function create_tabs(client, target, is_partition, is_extended) {
@@ -134,20 +144,20 @@ function create_tabs(client, target, is_partition, is_extended) {
 
     function add_action(title, func) {
         tab_actions.push(<StorageButton onlyWide key={title} onClick={func}>{title}</StorageButton>);
-        tab_menu_actions.push({ title: title, func: func, only_narrow: true });
+        tab_menu_actions.push({ title, func, only_narrow: true });
     }
 
     function add_danger_action(title, func) {
         tab_actions.push(<StorageButton onlyWide key={title} onClick={func}>{title}</StorageButton>);
-        tab_menu_danger_actions.push({ title: title, func: func, only_narrow: true });
+        tab_menu_danger_actions.push({ title, func, only_narrow: true });
     }
 
     function add_menu_action(title, func) {
-        tab_menu_actions.push({ title: title, func: func });
+        tab_menu_actions.push({ title, func });
     }
 
     function add_menu_danger_action(title, func) {
-        tab_menu_danger_actions.push({ title: title, func: func });
+        tab_menu_danger_actions.push({ title, func, danger: true });
     }
 
     const tabs = [];
@@ -160,12 +170,12 @@ function create_tabs(client, target, is_partition, is_extended) {
             name = <div className="content-nav-item-warning"><ExclamationTriangleIcon className="ct-icon-exclamation-triangle" /> {name}</div>;
         tabs.push(
             {
-                name: name,
-                renderer: renderer,
+                name,
+                renderer,
                 data: {
-                    client: client,
+                    client,
                     block: for_content ? content_block : block,
-                    lvol: lvol,
+                    lvol,
                     warnings: tab_warnings,
                 }
             });
@@ -504,18 +514,18 @@ function block_description(client, block) {
         type = cockpit.format(_("$0 (encrypted)"), type);
 
     return {
-        type: type,
-        used_for: used_for,
-        link: link,
-        size: size,
-        critical_size: critical_size
+        type,
+        used_for,
+        link,
+        size,
+        critical_size
     };
 }
 
 function append_row(client, rows, level, key, name, desc, tabs, job_object) {
     function menuitem(action) {
         if (action.title)
-            return <StorageMenuItem onlyNarrow={action.only_narrow} key={action.title} onClick={action.func}>{action.title}</StorageMenuItem>;
+            return <StorageMenuItem onlyNarrow={action.only_narrow} key={action.title} onClick={action.func} danger={action.danger}>{action.title}</StorageMenuItem>;
         else
             return <DropdownSeparator className={action.only_narrow ? "show-only-when-narrow" : null} key="sep" />;
     }

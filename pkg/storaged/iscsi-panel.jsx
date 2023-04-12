@@ -20,7 +20,7 @@
 import cockpit from "cockpit";
 import React from "react";
 
-import { Button } from "@patternfly/react-core";
+import { Button } from "@patternfly/react-core/dist/esm/components/Button/index.js";
 import { CheckIcon, EditIcon, PlusIcon, TrashIcon } from "@patternfly/react-icons";
 
 import { SidePanel } from "./side-panel.jsx";
@@ -51,9 +51,7 @@ export class IscsiPanel extends React.Component {
                 ],
                 Action: {
                     Title: _("Next"),
-                    action: function (vals, progress_callback) {
-                        const dfd = cockpit.defer();
-
+                    action: (vals, progress_callback) => new Promise((resolve, reject) => {
                         const options = { };
                         if (vals.username || vals.password) {
                             options.username = { t: 's', v: vals.username };
@@ -68,7 +66,7 @@ export class IscsiPanel extends React.Component {
                                                   ])
                                 .then(function (results) {
                                     if (!cancelled) {
-                                        dfd.resolve();
+                                        resolve();
                                         iscsi_add(vals, results[0]);
                                     }
                                 })
@@ -91,16 +89,14 @@ export class IscsiPanel extends React.Component {
                                             address: _("Unable to reach server")
                                         };
 
-                                    dfd.reject(error);
+                                    reject(error);
                                 });
 
                         progress_callback(null, function () {
                             cancelled = true;
-                            dfd.reject();
+                            reject();
                         });
-
-                        return dfd.promise();
-                    }
+                    }),
                 }
             });
         }
@@ -144,7 +140,7 @@ export class IscsiPanel extends React.Component {
                                     if (err.message.indexOf("authorization") != -1)
                                         iscsi_add_with_creds(discover_vals, vals);
                                     else
-                                        return cockpit.reject(err);
+                                        return Promise.reject(err);
                                 });
                     }
                 }
@@ -171,7 +167,7 @@ export class IscsiPanel extends React.Component {
                                             username: true, // makes it red without text below
                                             password: _("Invalid username or password")
                                         };
-                                    return cockpit.reject(err);
+                                    return Promise.reject(err);
                                 });
                     }
                 }
@@ -238,7 +234,7 @@ export class IscsiPanel extends React.Component {
         const toggle_armed = (event) => {
             if (!event || event.button !== 0)
                 return;
-            this.setState({ armed: !this.state.armed });
+            this.setState(prevState => ({ armed: !prevState.armed }));
         };
 
         const sessions = Object.keys(client.iscsi_sessions).sort(cmp_session)

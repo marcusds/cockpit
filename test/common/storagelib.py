@@ -319,10 +319,13 @@ class StorageHelpers:
         self.browser.wait_not_present(self.dialog_field(field))
 
     def dialog_wait_apply_enabled(self):
-        self.browser.wait_attr('#dialog button.apply', "disabled", None)
+        self.browser.wait_attr('#dialog button.apply:nth-of-type(1)', "disabled", None)
 
     def dialog_apply(self):
-        self.browser.click('#dialog button.apply')
+        self.browser.click('#dialog button.apply:nth-of-type(1)')
+
+    def dialog_apply_secondary(self):
+        self.browser.click('#dialog button.apply:nth-of-type(2)')
 
     def dialog_cancel(self):
         self.browser.click('#dialog button.cancel')
@@ -340,14 +343,14 @@ class StorageHelpers:
 
     def dialog_set_vals(self, values):
         # Sometimes a certain field needs to be set before other
-        # fields come into existence and thus the order matter that we
-        # set the fields in.  The tests however just give us a
+        # fields come into existence and thus the order matters that
+        # we set the fields in.  The tests however just give us a
         # unordered 'dict'.  Instead of changing the tests, we figure
         # out the right order dynamically here by just setting what we
         # can and then starting over.  As long as we make progress in
         # each iteration, everything is good.
         failed = {}
-        last_error = None
+        last_error = Exception
         for f in values:
             try:
                 self.dialog_set_val(f, values[f])
@@ -360,12 +363,15 @@ class StorageHelpers:
             else:
                 raise last_error
 
-    def dialog(self, values, expect={}):
+    def dialog(self, values, expect={}, secondary=False):
         self.dialog_wait_open()
         for f in expect:
             self.dialog_wait_val(f, expect[f])
         self.dialog_set_vals(values)
-        self.dialog_apply()
+        if secondary:
+            self.dialog_apply_secondary()
+        else:
+            self.dialog_apply()
         self.dialog_wait_close()
 
     def confirm(self):
@@ -590,10 +596,9 @@ mount /dev/mapper/dm-test /new-root
 mkfs.ext4 {dev}1
 mkdir /new-root/boot
 mount {dev}1 /new-root/boot
-tar --one-file-system -cf - --exclude /boot --exclude='/var/tmp/*' --exclude='/var/cache/*' \
+tar --selinux --one-file-system -cf - --exclude /boot --exclude='/var/tmp/*' --exclude='/var/cache/*' \
     --exclude='/var/lib/mock/*' --exclude='/var/lib/containers/*' --exclude='/new-root/*' \
-    / | tar -C /new-root -xf -
-touch /new-root/.autorelabel
+    / | tar --selinux -C /new-root -xf -
 tar --one-file-system -C /boot -cf - . | tar -C /new-root/boot -xf -
 umount /new-root/boot
 mount {dev}1 /boot
@@ -605,7 +610,13 @@ echo "UUID=$uuid / auto defaults 0 0" >/new-root/etc/fstab
 echo "UUID=$buuid /boot auto defaults 0 0" >>/new-root/etc/fstab
 dracut --regenerate-all --force
 grub2-install {dev}
-grub2-mkconfig -o /boot/grub2/grub.cfg
+( # HACK - grub2-mkconfig messes with /boot/loader/entries/ and /etc/kernel/cmdline
+  mv /boot/loader/entries /boot/loader/entries.stowed
+  ! test -f /etc/kernel/cmdline || mv /etc/kernel/cmdline /etc/kernel/cmdline.stowed
+  grub2-mkconfig -o /boot/grub2/grub.cfg
+  mv /boot/loader/entries.stowed /boot/loader/entries
+  ! test -f /etc/kernel/cmdline.stowed || mv /etc/kernel/cmdline.stowed /etc/kernel/cmdline
+)
 grubby --update-kernel=ALL --args="root=UUID=$uuid rootflags=defaults rd.luks.uuid=$luks_uuid"
 ! test -f /etc/kernel/cmdline || cp /etc/kernel/cmdline /new-root/etc/kernel/cmdline
 """, timeout=300)

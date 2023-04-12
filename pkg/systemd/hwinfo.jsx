@@ -27,34 +27,31 @@ import { createRoot } from 'react-dom/client';
 
 import * as timeformat from 'timeformat';
 
-import {
-    Alert, AlertActionCloseButton, Button,
-    Card, CardHeader, CardTitle, CardBody,
-    DataList,
-    DataListItem,
-    DataListCell,
-    DataListItemRow,
-    DataListItemCells,
-    DataListAction,
-    DescriptionList, DescriptionListGroup, DescriptionListTerm, DescriptionListDescription,
-    EmptyState,
-    Flex, FlexItem,
-    Gallery,
-    Page, PageSection,
-    Text, TextVariants,
-    Breadcrumb, BreadcrumbItem,
-    Modal, Switch,
-} from '@patternfly/react-core';
+import { Alert, AlertActionCloseButton } from "@patternfly/react-core/dist/esm/components/Alert/index.js";
+import { Button } from "@patternfly/react-core/dist/esm/components/Button/index.js";
+import { Card, CardBody, CardHeader, CardTitle } from "@patternfly/react-core/dist/esm/components/Card/index.js";
+import { DataList, DataListAction, DataListCell, DataListItem, DataListItemCells, DataListItemRow } from "@patternfly/react-core/dist/esm/components/DataList/index.js";
+import { DescriptionList, DescriptionListDescription, DescriptionListGroup, DescriptionListTerm } from "@patternfly/react-core/dist/esm/components/DescriptionList/index.js";
+import { EmptyState } from "@patternfly/react-core/dist/esm/components/EmptyState/index.js";
+import { Flex, FlexItem } from "@patternfly/react-core/dist/esm/layouts/Flex/index.js";
+import { Gallery } from "@patternfly/react-core/dist/esm/layouts/Gallery/index.js";
+import { Page, PageSection } from "@patternfly/react-core/dist/esm/components/Page/index.js";
+import { Text, TextVariants } from "@patternfly/react-core/dist/esm/components/Text/index.js";
+import { Breadcrumb, BreadcrumbItem } from "@patternfly/react-core/dist/esm/components/Breadcrumb/index.js";
+import { Modal } from "@patternfly/react-core/dist/esm/components/Modal/index.js";
+import { Switch } from "@patternfly/react-core/dist/esm/components/Switch/index.js";
 import { ExternalLinkAltIcon } from "@patternfly/react-icons";
 import { SortByDirection } from "@patternfly/react-table";
 import { ListingTable } from "cockpit-components-table.jsx";
 import { WithDialogs, DialogsContext } from "dialogs.jsx";
 
-import kernelopt_sh from "raw-loader!./kernelopt.sh";
+import kernelopt_sh from "./kernelopt.sh";
 import detect from "./hw-detect.js";
 
 import { superuser } from "superuser";
 import { PrivilegedButton } from "cockpit-components-privileged.jsx";
+
+import "./hwinfo.scss";
 
 const _ = cockpit.gettext;
 
@@ -154,7 +151,7 @@ function availableMitigations() {
 
         availableMitigations.cachedMitigations = {
             available: nosmt_available,
-            nosmt_enabled: nosmt_enabled,
+            nosmt_enabled,
             mitigations_arg: mitigations_match ? mitigations_match[1] : undefined,
         };
         return availableMitigations.cachedMitigations;

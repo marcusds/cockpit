@@ -18,14 +18,15 @@
  */
 
 import React from 'react';
-import { Button, Flex } from '@patternfly/react-core';
+import { Button } from "@patternfly/react-core/dist/esm/components/Button/index.js";
+import { Flex } from "@patternfly/react-core/dist/esm/layouts/Flex/index.js";
 import { CheckIcon, ExclamationTriangleIcon, ExternalLinkAltIcon } from '@patternfly/react-icons';
 
 import cockpit from "cockpit";
 import * as service from "service.js";
 import { superuser } from "superuser";
 
-import insights_poll_hack_sh from "raw-loader!./insights-poll-hack.sh";
+import insights_poll_hack_sh from "./insights-poll-hack.sh";
 
 import "./insights.scss";
 

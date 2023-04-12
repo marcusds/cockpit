@@ -21,19 +21,19 @@ import cockpit from 'cockpit';
 import * as PK from 'packagekit.js';
 import { superuser } from 'superuser';
 
-import * as utils from './utils';
+import * as utils from './utils.js';
 
 import * as python from "python.js";
 import { read_os_release } from "os-release.js";
 
 import { find_warnings } from "./warnings.jsx";
 
-import inotify_py from "raw-loader!inotify.py";
-import mount_users_py from "raw-loader!./mount-users.py";
-import nfs_mounts_py from "raw-loader!./nfs-mounts.py";
-import vdo_monitor_py from "raw-loader!./vdo-monitor.py";
-import stratis2_set_key_py from "raw-loader!./stratis2-set-key.py";
-import stratis3_set_key_py from "raw-loader!./stratis3-set-key.py";
+import inotify_py from "inotify.py";
+import mount_users_py from "./mount-users.py";
+import nfs_mounts_py from "./nfs-mounts.py";
+import vdo_monitor_py from "./vdo-monitor.py";
+import stratis2_set_key_py from "./stratis2-set-key.py";
+import stratis3_set_key_py from "./stratis3-set-key.py";
 
 /* STORAGED CLIENT
  */
@@ -69,7 +69,7 @@ function instance_sampler(metrics, source) {
     let instances;
     const self = {
         data: { },
-        close: close
+        close
     };
 
     cockpit.event_target(self);
@@ -109,7 +109,7 @@ function instance_sampler(metrics, source) {
     const channel = cockpit.channel({
         payload: "metrics1",
         source: source || "internal",
-        metrics: metrics
+        metrics
     });
     channel.addEventListener("closed", function (event, error) {
         console.log("closed", error);
@@ -443,24 +443,22 @@ function init_model(callback) {
 
     function enable_udisks_features() {
         if (!client.manager.valid)
-            return cockpit.resolve();
+            return Promise.resolve();
         if (!client.manager.EnableModules)
-            return cockpit.resolve();
+            return Promise.resolve();
         return client.manager.EnableModules(true).then(
             function() {
-                const defer = cockpit.defer();
                 client.manager_lvm2 = proxy("Manager.LVM2", "Manager");
                 client.manager_iscsi = proxy("Manager.ISCSI.Initiator", "Manager");
-                Promise.allSettled([client.manager_lvm2.wait(), client.manager_iscsi.wait()]).then(() => {
-                    client.features.lvm2 = client.manager_lvm2.valid;
-                    client.features.iscsi = (client.manager_iscsi.valid &&
-                                                      client.manager_iscsi.SessionsSupported !== false);
-                    defer.resolve();
-                });
-                return defer.promise;
+                return Promise.allSettled([client.manager_lvm2.wait(), client.manager_iscsi.wait()])
+                        .then(() => {
+                            client.features.lvm2 = client.manager_lvm2.valid;
+                            client.features.iscsi = (client.manager_iscsi.valid &&
+                                                            client.manager_iscsi.SessionsSupported !== false);
+                        });
             }, function(error) {
                 console.warn("Can't enable storaged modules", error.toString());
-                return cockpit.resolve();
+                return Promise.resolve();
             });
     }
 
@@ -475,10 +473,10 @@ function init_model(callback) {
             function (success) {
                 // hack here
                 client.features.legacy_vdo = success;
-                return cockpit.resolve();
+                return Promise.resolve();
             },
             function () {
-                return cockpit.resolve();
+                return Promise.resolve();
             });
     }
 
@@ -486,10 +484,10 @@ function init_model(callback) {
         return cockpit.spawn(["which", "clevis-luks-bind"], { err: "ignore" }).then(
             function () {
                 client.features.clevis = true;
-                return cockpit.resolve();
+                return Promise.resolve();
             },
             function () {
-                return cockpit.resolve();
+                return Promise.resolve();
             });
     }
 
@@ -502,10 +500,10 @@ function init_model(callback) {
             function () {
                 client.features.nfs = true;
                 client.nfs.start();
-                return cockpit.resolve();
+                return Promise.resolve();
             },
             function () {
-                return cockpit.resolve();
+                return Promise.resolve();
             });
     }
 
@@ -517,7 +515,7 @@ function init_model(callback) {
         return client.stratis_start().catch(error => {
             if (error.problem != "not-found")
                 console.warn("Failed to start Stratis support", error);
-            return cockpit.resolve();
+            return Promise.resolve();
         });
     }
 
@@ -657,21 +655,21 @@ function nfs_mounts() {
         entries: [],
         fsys_sizes: { },
 
-        start: start,
+        start,
 
-        get_fsys_size: get_fsys_size,
-        entry_users: entry_users,
+        get_fsys_size,
+        entry_users,
 
-        update_entry: update_entry,
-        add_entry: add_entry,
-        remove_entry: remove_entry,
+        update_entry,
+        add_entry,
+        remove_entry,
 
-        mount_entry: mount_entry,
-        unmount_entry: unmount_entry,
-        stop_and_unmount_entry: stop_and_unmount_entry,
-        stop_and_remove_entry: stop_and_remove_entry,
+        mount_entry,
+        unmount_entry,
+        stop_and_unmount_entry,
+        stop_and_remove_entry,
 
-        find_entry: find_entry
+        find_entry
     };
 
     function spawn_nfs_mounts(args) {
@@ -769,7 +767,7 @@ client.nfs = nfs_mounts();
 
 function legacy_vdo_overlay() {
     const self = {
-        start: start,
+        start,
 
         volumes: [],
 
@@ -777,10 +775,10 @@ function legacy_vdo_overlay() {
         by_dev: { },
         by_backing_dev: { },
 
-        find_by_block: find_by_block,
-        find_by_backing_block: find_by_backing_block,
+        find_by_block,
+        find_by_backing_block,
 
-        create: create
+        create
     };
 
     function cmd(args) {
@@ -804,7 +802,7 @@ function legacy_vdo_overlay() {
             }
 
             const v = {
-                name: name,
+                name,
                 broken: vol.broken,
                 dev: "/dev/mapper/" + name,
                 backing_dev: vol.device,
@@ -1275,20 +1273,18 @@ client.init = function init_storaged(callback) {
 };
 
 client.wait_for = function wait_for(cond) {
-    const dfd = cockpit.defer();
-
-    function check() {
-        const res = cond();
-        if (res) {
-            client.removeEventListener("changed", check);
-            dfd.resolve(res);
+    return new Promise(resolve => {
+        function check() {
+            const res = cond();
+            if (res) {
+                client.removeEventListener("changed", check);
+                resolve(res);
+            }
         }
-    }
 
-    client.addEventListener("changed", check);
-    check();
-
-    return dfd.promise();
+        client.addEventListener("changed", check);
+        check();
+    });
 };
 
 client.get_config = (name, def) => {

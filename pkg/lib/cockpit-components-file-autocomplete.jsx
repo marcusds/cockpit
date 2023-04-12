@@ -19,7 +19,7 @@
 
 import cockpit from "cockpit";
 import React from "react";
-import { Select, SelectVariant, SelectOption } from "@patternfly/react-core";
+import { Select, SelectOption, SelectVariant } from "@patternfly/react-core/dist/esm/components/Select/index.js";
 import PropTypes from "prop-types";
 import { debounce } from 'throttle-debounce';
 
@@ -61,9 +61,13 @@ export class FileAutoComplete extends React.Component {
                     .find(entry => (entry.type == 'directory' && entry.path == path + '/') || (entry.type == 'file' && entry.path == path));
 
             if (match) {
+                // If match file path is a prefix of another file, do not update current directory,
+                // since we cannot tell file/directory user wants to select
+                // https://bugzilla.redhat.com/show_bug.cgi?id=2097662
+                const isPrefix = this.state.displayFiles.filter(entry => entry.path.startsWith(value)).length > 1;
                 // If the inserted string corresponds to a directory listed in the results
                 // update the current directory and refetch results
-                if (match.type == 'directory')
+                if (match.type == 'directory' && !isPrefix)
                     cb(match.path);
                 else
                     this.setState({ value: match.path });
@@ -84,9 +88,9 @@ export class FileAutoComplete extends React.Component {
     }
 
     onCreateOption(newValue) {
-        this.setState({
-            displayFiles: [...this.state.displayFiles, { type: "file", path: newValue }]
-        });
+        this.setState(prevState => ({
+            displayFiles: [...prevState.displayFiles, { type: "file", path: newValue }]
+        }));
     }
 
     updateFiles(path) {
@@ -141,7 +145,7 @@ export class FileAutoComplete extends React.Component {
         if (!error)
             this.setState({ displayFiles: listItems, directory });
         this.setState({
-            error: error,
+            error,
         });
     }
 

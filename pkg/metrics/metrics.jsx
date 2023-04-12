@@ -19,26 +19,28 @@
 
 import React, { useState } from 'react';
 
-import {
-    Alert,
-    Breadcrumb, BreadcrumbItem,
-    Button,
-    Card, CardTitle, CardBody, CardHeader, Gallery,
-    DescriptionList, DescriptionListGroup, DescriptionListTerm, DescriptionListDescription,
-    Flex, FlexItem,
-    Grid, GridItem,
-    Modal,
-    Page, PageSection, PageSectionVariants,
-    Popover,
-    Progress, ProgressVariant,
-    Select, SelectVariant, SelectOption,
-    Stack, StackItem,
-    Switch,
-    Text, TextContent, TextVariants,
-    Tooltip,
-} from '@patternfly/react-core';
+import { Alert } from "@patternfly/react-core/dist/esm/components/Alert/index.js";
+import { Breadcrumb, BreadcrumbItem } from "@patternfly/react-core/dist/esm/components/Breadcrumb/index.js";
+import { Button } from "@patternfly/react-core/dist/esm/components/Button/index.js";
+import { Card, CardBody, CardHeader, CardTitle } from "@patternfly/react-core/dist/esm/components/Card/index.js";
+import { Gallery } from "@patternfly/react-core/dist/esm/layouts/Gallery/index.js";
+import { DescriptionList, DescriptionListDescription, DescriptionListGroup, DescriptionListTerm } from "@patternfly/react-core/dist/esm/components/DescriptionList/index.js";
+import { Flex, FlexItem } from "@patternfly/react-core/dist/esm/layouts/Flex/index.js";
+import { Grid, GridItem } from "@patternfly/react-core/dist/esm/layouts/Grid/index.js";
+import { Modal } from "@patternfly/react-core/dist/esm/components/Modal/index.js";
+import { Page, PageGroup, PageSection, PageSectionVariants } from "@patternfly/react-core/dist/esm/components/Page/index.js";
+import { Popover } from "@patternfly/react-core/dist/esm/components/Popover/index.js";
+import { Progress, ProgressVariant } from "@patternfly/react-core/dist/esm/components/Progress/index.js";
+import { Select, SelectOption, SelectVariant } from "@patternfly/react-core/dist/esm/components/Select/index.js";
+import { Stack, StackItem } from "@patternfly/react-core/dist/esm/layouts/Stack/index.js";
+import { Switch } from "@patternfly/react-core/dist/esm/components/Switch/index.js";
+import { Text, TextContent, TextVariants } from "@patternfly/react-core/dist/esm/components/Text/index.js";
+import { Tooltip } from "@patternfly/react-core/dist/esm/components/Tooltip/index.js";
 import { Table, TableHeader, TableBody, TableGridBreakpoint, TableVariant, TableText, RowWrapper, cellWidth, fitContent } from '@patternfly/react-table';
-import { ExclamationTriangleIcon, ExclamationCircleIcon, CogIcon, ExternalLinkAltIcon } from '@patternfly/react-icons';
+import {
+    AngleRightIcon, AngleDownIcon, ExclamationTriangleIcon, ExclamationCircleIcon, CogIcon, ExternalLinkAltIcon,
+    ResourcesFullIcon, ResourcesAlmostFullIcon, ResourcesAlmostEmptyIcon
+} from '@patternfly/react-icons';
 
 import cockpit from 'cockpit';
 import * as machine_info from "../lib/machine-info.js";
@@ -51,11 +53,12 @@ import { useObject, useEvent, useInit } from "hooks.js";
 import { WithDialogs, useDialogs } from "dialogs.jsx";
 
 import { EmptyStatePanel } from "../lib/cockpit-components-empty-state.jsx";
-import { ListingTable } from "cockpit-components-table.jsx";
 import { JournalOutput } from "cockpit-components-logs-panel.jsx";
 import { install_dialog } from "cockpit-components-install-dialog.jsx";
 import { ModalError } from "cockpit-components-inline-notification.jsx";
 import { FirewalldRequest } from "cockpit-components-firewalld-request.jsx";
+
+import "./metrics.scss";
 import "journal.css";
 
 const MSEC_PER_H = 3600000;
@@ -102,21 +105,21 @@ const scaleForValue = x => {
 const RESOURCES = {
     use_cpu: {
         name: _("CPU usage"),
-        event_description: _("CPU spike"),
+        event_description: _("CPU"),
         // all in msec/s
         normalize: ([nice, user, sys]) => (nice + user + sys) / 1000 / numCpu,
         format: ([nice, user, sys]) => `${_("nice")}: ${Math.round(nice / 10)}%, ${_("user")}: ${Math.round(user / 10)}%, ${_("sys")}: ${Math.round(sys / 10)}%`,
     },
     sat_cpu: {
         name: _("Load"),
-        event_description: _("Load spike"),
+        event_description: _("Load"),
         // unitless, unbounded, dynamic scaling for normalization
         normalize: load => Math.min(load, scaleSatCPU) / scaleSatCPU,
         format: load => cockpit.format_number(load),
     },
     use_memory: {
         name: _("Memory usage"),
-        event_description: _("Memory spike"),
+        event_description: _("Memory"),
         // assume used == total - available
         normalize: ([totalKiB, availKiB]) => 1 - (availKiB / totalKiB),
         format: ([totalKiB, availKiB]) => `${cockpit.format_bytes((totalKiB - availKiB) * 1024)} / ${cockpit.format_bytes(totalKiB * 1024)}`,
@@ -131,14 +134,14 @@ const RESOURCES = {
     },
     use_disks: {
         name: _("Disk I/O"),
-        event_description: _("Disk I/O spike"),
+        event_description: _("Disk I/O"),
         // KiB/s, unbounded, dynamic scaling for normalization
         normalize: KiBps => KiBps / scaleUseDisks,
         format: KiBps => cockpit.format_bytes_per_sec(KiBps * 1024),
     },
     use_network: {
         name: _("Network I/O"),
-        event_description: _("Network I/O spike"),
+        event_description: _("Network I/O"),
         // B/s, unbounded, dynamic scaling for normalization
         normalize: bps => bps / scaleUseNetwork,
         format: bps => cockpit.format_bytes_per_sec(bps),
@@ -193,7 +196,7 @@ const HISTORY_METRICS = [
 ];
 
 function debug() {
-    if (window.debugging == "all" || window.debugging == "metrics")
+    if (window.debugging == "all" || window.debugging?.includes("metrics"))
         console.debug.apply(console, arguments);
 }
 
@@ -239,7 +242,6 @@ class CurrentMetrics extends React.Component {
             swapUsed: null, // bytes
             cpuUsed: 0, // percentage
             cpuCoresUsed: [], // [ percentage ]
-            cpuTemperature: NaN, // degree Celsius
             loadAvg: null, // [ 1min, 5min, 15min ]
             disksRead: 0, // B/s
             disksWritten: 0, // B/s
@@ -287,13 +289,13 @@ class CurrentMetrics extends React.Component {
         }
 
         if (!cockpit.hidden && (this.temperature_channel === null)) {
-            this.temperature_channel = cockpit.channel({ payload: "metrics1", source: "internal", interval: 3000, metrics: CPU_TEMPERATURE_METRICS });
+            this.temperature_channel = cockpit.channel({ payload: "metrics1", source: "internal", interval: INTERVAL, metrics: CPU_TEMPERATURE_METRICS });
             this.temperature_channel.addEventListener("close", (ev, error) => console.error("CPU temperature metric closed:", error));
             this.temperature_channel.addEventListener("message", this.onTemperatureUpdate);
         }
 
         if (!cockpit.hidden && this.metrics_channel === null) {
-            this.metrics_channel = cockpit.channel({ payload: "metrics1", source: "internal", interval: 3000, metrics: CURRENT_METRICS });
+            this.metrics_channel = cockpit.channel({ payload: "metrics1", source: "internal", interval: INTERVAL, metrics: CURRENT_METRICS });
             this.metrics_channel.addEventListener("message", this.onMetricsUpdate);
         }
     }
@@ -578,8 +580,8 @@ class CurrentMetrics extends React.Component {
             }
         })
                 .catch(err => console.error("could not obtain podman names:", err))
-                .finally(() => this.setState({ podNameMapping: { ...this.state.podNameMapping, ...podNameMapping } }));
-    }
+                .finally(() => this.setState(prevState => ({ podNameMapping: { ...prevState.podNameMapping, ...podNameMapping } })));
+    };
 
     render() {
         const memUsedFraction = memTotal ? this.state.memUsed / memTotal : 0;
@@ -843,23 +845,24 @@ class CurrentMetrics extends React.Component {
 
 const SvgGraph = ({ data, resource, have_sat }) => {
     const dataPoints = key => (
-        "0,0 " + // start polygon at (0, 0)
-        data.map((samples, index) => (samples && typeof samples[key] === 'number') ? samples[key].toString() + "," + index.toString() : "").join(" ") +
-        " 0," + (data.length - 1) // close polygon
+        "0 0, " + // start polygon at (0, 0)
+        data.map((samples, index) => (samples && typeof samples[key] === 'number') ? parseInt(samples[key] * 100).toString() + "% " + (((index / SVG_YMAX) * 100).toString() + "%") : "").join(", ") +
+        ", 0 " + ((data.length - 1) / SVG_YMAX) * 100 + "%" // close polygon
     );
 
     return (
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox={ "0 0 2 " + SVG_YMAX } preserveAspectRatio="none">
-            <polygon
-                 transform={ have_sat ? "matrix(-1,0,0,-1,1," + SVG_YMAX + ")" : "matrix(-2,0,0,-1,2," + SVG_YMAX + ")" }
-                 points={ dataPoints("use_" + resource) }
+        <>
+            <div
+                 className="polygon polygon-use"
+                 style={{ "--points": dataPoints("use_" + resource) }}
+                 points={dataPoints("use_" + resource)}
             />
-            { have_sat && <polygon
-                transform={ "matrix(1,0,0,-1,1," + SVG_YMAX + ")" }
-                points={ dataPoints("sat_" + resource) }
-                opacity="0.7"
+            { have_sat && <div
+                className="polygon polygon-sat"
+                style={{ "--points": dataPoints("sat_" + resource) }}
+                points={dataPoints("sat_" + resource)}
             /> }
-        </svg>
+        </>
     );
 };
 
@@ -868,23 +871,16 @@ class MetricsMinute extends React.Component {
         super(props);
 
         this.state = {
-            expanded: false,
             logs: null,
             logsUrl: null,
         };
-
-        this.expand = this.expand.bind(this);
         this.onHover = this.onHover.bind(this);
         this.findLogs = this.findLogs.bind(this);
     }
 
-    componentDidUpdate(_, prevState) {
-        if (prevState.expanded === false && this.state.expanded === true)
+    componentDidMount() {
+        if (this.props.isExpanded && this.props.events)
             this.findLogs(this.props.events.start - 4, this.props.events.end + 4); // +- 20s
-    }
-
-    expand(isOpenCurrent) {
-        this.setState({ expanded: isOpenCurrent });
     }
 
     onHover(ev) {
@@ -921,7 +917,7 @@ class MetricsMinute extends React.Component {
         time.setUTCSeconds(end_second);
         const until = formatUTC_ISO(time);
 
-        const match = { priority: "info", since: since, until: until, follow: false, count: 10 };
+        const match = { priority: "info", since, until, follow: false, count: 10 };
         const journalctl = journal.journalctl(match);
 
         const out = new JournalOutput(match);
@@ -965,10 +961,10 @@ class MetricsMinute extends React.Component {
                 graph = <SvgGraph key={resource} data={this.props.data} resource={resource} have_sat={have_sat} />;
             } else if (first) {
                 // render simple bars for "compressed" minutes without events
-                graph = <div key={resource} className="compressed" style={{ "--utilization": first["use_" + resource] || 0, "--saturation": first["sat_" + resource] || 0 }}>
-                    <div className="utilization" />
-                    { have_sat && <div className="saturation" /> }
-                </div>;
+                graph = <>
+                    <div className="polygon-use compressed" style={{ "--utilization": first["use_" + resource] || 0 }} />
+                    { have_sat && <div className="polygon-sat compressed" style={{ "--saturation": first["sat_" + resource] || 0 }} /> }
+                </>;
             }
 
             return (
@@ -976,64 +972,49 @@ class MetricsMinute extends React.Component {
                     key={ resource + this.props.startTime + this.props.minute }
                     className={ ("metrics-data metrics-data-" + resource) + (first ? " valid-data" : " empty-data") + (have_sat ? " have-saturation" : "") }
                     aria-hidden="true"
-                    onMouseMove={this.onHover}
+                    { ...(this.props.isExpanded && { onMouseMove: this.onHover }) }
                 >
                     {graph}
                 </div>
             );
         });
 
-        let events = <div className="metrics-events" />;
-        if (this.props.events) {
+        let desc;
+        if (this.props.isExpanded && this.props.events) {
             const timestamp = this.props.startTime + (this.props.minute * 60000);
-            const desc = <div className="description">
-                { this.props.events.events.map(t => <span className="type" key={ t }>{ RESOURCES[t].event_description }</span>) }
-                <div className="details">
-                    <time>{ timeformat.time(timestamp) }</time>
-                    {this.state.expanded && this.state.logsUrl &&
-                        <Button variant="link" isInline onClick={e => cockpit.jump(this.state.logsUrl)}>
-                            { _("View detailed logs") }
-                        </Button>}
-                </div>
-            </div>;
 
-            let body = " "; // Cannot be false-y, otherwise table does not show '>'
-            if (this.state.expanded) {
-                body = <div className="cockpit-log-panel">
-                    {this.state.logs === null
-                        ? _("Loading...")
-                        : this.state.logs.length === 0
-                            ? <span className="pf-u-py-sm">{ _("No logs found") }</span>
-                            : this.state.logs
-                    }
-                </div>;
-            }
+            const logsPanel = (
+                <>
+                    {(this.state.logs?.length && this.state.logsUrl) && <Button variant="secondary" onClick={e => cockpit.jump(this.state.logsUrl)}>{_("View detailed logs")}</Button>}
+                    <div className="cockpit-log-panel">
+                        {this.state.logs?.length ? this.state.logs : _("No log entries")}
+                    </div>
+                </>
+            );
 
-            const entry = [{
-                props: { key: timestamp, 'data-row-id': timestamp },
-                columns: [{ title: desc }],
-                hasPadding: false,
-                expandedContent: body,
-            }];
-
-            events = <div className="metrics-events-wrapper">
-                <ListingTable aria-label={ _("Event logs") }
-                                      className="metrics-events"
-                                      style={{ "--pf-c-table--BorderColor": "#fff" }}
-                                      showHeader={false}
-                                      variant="compact"
-                                      afterToggle={this.expand}
-                                      gridBreakPoint=''
-                                      columns={[
-                                          { title: _("Event") },
-                                      ]}
-                                      rows={entry} />
+            const resourceDesc = (
+                <span className="type">
+                    {this.props.events.events.map(t => RESOURCES[t].event_description).join(", ")}
+                </span>
+            );
+            desc = <div className="metrics-events">
+                <time>{ timeformat.time(timestamp) }</time>
+                <span className="spikes_count" />
+                {this.state.logs?.length > 0
+                    ? <Popover position="right" hasAutoWidth className="metrics-events-popover" bodyContent={logsPanel}>
+                        <Button
+                            variant="link" isInline
+                            className="spikes_info">
+                            {resourceDesc}
+                        </Button>
+                    </Popover>
+                    : <span className="spikes_info">{resourceDesc}</span>}
             </div>;
         }
 
         return (
             <div className="metrics-minute" data-minute={this.props.minute}>
-                { events }
+                { this.props.isExpanded && desc }
                 <div className="metrics-graphs">
                     { graphs }
                 </div>
@@ -1048,6 +1029,8 @@ class MetricsHour extends React.Component {
 
         this.state = {
             minuteGraphs: [],
+            minute_events: {},
+            isHourExpanded: false,
             dataItems: 0,
         };
 
@@ -1060,9 +1043,10 @@ class MetricsHour extends React.Component {
 
     shouldComponentUpdate(nextProps, nextState) {
         if (this.state.dataItems !== nextProps.data.length ||
+            this.state.isHourExpanded !== nextState.isHourExpanded ||
             this.props.startTime !== nextProps.startTime ||
             Object.keys(this.props.selectedVisibility).some(itm => this.props.selectedVisibility[itm] != nextProps.selectedVisibility[itm])) {
-            this.updateGraphs(nextProps.data, nextProps.startTime, nextProps.selectedVisibility);
+            this.updateGraphs(nextProps.data, nextProps.startTime, nextProps.selectedVisibility, nextState.isHourExpanded);
             return false;
         }
 
@@ -1070,7 +1054,7 @@ class MetricsHour extends React.Component {
     }
 
     // data: type → SAMPLES_PER_H objects from startTime
-    updateGraphs(data, startTime, selectedVisibility) {
+    updateGraphs(data, startTime, selectedVisibility, isHourExpanded) {
         const filteredData = data.map(sample => Object.keys(sample)
                 .filter(key => selectedVisibility[key.split("_")[1]])
                 .reduce((cur, key) => Object.assign(cur, { [key]: sample[key] }), {}));
@@ -1128,21 +1112,73 @@ class MetricsHour extends React.Component {
             const dataOffset = minute * SAMPLES_PER_MIN;
             const dataSlice = normData.slice(dataOffset, dataOffset + SAMPLES_PER_MIN);
             const rawSlice = this.props.data.slice(dataOffset, dataOffset + SAMPLES_PER_MIN);
-            minuteGraphs.push(<MetricsMinute key={minute} minute={minute} data={dataSlice} rawData={rawSlice} events={minute_events[minute]} startTime={this.props.startTime} selectedVisibility={selectedVisibility} />);
+            minuteGraphs.push(
+                <MetricsMinute
+                    isExpanded={isHourExpanded}
+                    key={minute}
+                    minute={minute}
+                    data={dataSlice}
+                    rawData={rawSlice}
+                    events={minute_events[minute]}
+                    startTime={this.props.startTime}
+                    selectedVisibility={selectedVisibility} />
+            );
         }
 
-        this.setState({ minuteGraphs: minuteGraphs, dataItems: this.props.data.length });
+        this.setState((_, prevProps) => ({
+            isHourExpanded,
+            minute_events,
+            minuteGraphs,
+            dataItems: prevProps.data.length
+        }));
     }
 
     render() {
+        const hourDesc = (
+            <HourDescription
+               minute_events={this.state.minute_events}
+               onToggleHourExpanded={isHourExpanded => this.setState({ isHourExpanded })}
+               startTime={this.props.startTime}
+               isHourExpanded={this.state.isHourExpanded} />
+        );
+
         return (
-            <div id={ "metrics-hour-" + this.props.startTime.toString() } style={{ "--has-swap": swapTotal ? "var(--column-size)" : "var(--half-column-size)" }} className="metrics-hour">
-                { this.state.minuteGraphs }
-                <h3 className="metrics-time"><time>{ timeformat.dateTime(this.props.startTime) }</time></h3>
+            <div id={ "metrics-hour-" + this.props.startTime.toString() }
+                 className={"metrics-hour" + (!this.state.isHourExpanded ? " metrics-hour-compressed" : "")}>
+                {hourDesc}
+                {!this.state.isHourExpanded ? <div className="metrics-minutes">{this.state.minuteGraphs}</div> : this.state.minuteGraphs}
             </div>
         );
     }
 }
+
+const HourDescription = ({ minute_events, isHourExpanded, onToggleHourExpanded, startTime }) => {
+    const event_types = {};
+    Object.keys(RESOURCES).forEach(t => { event_types[t] = 0 });
+    Object.values(minute_events).forEach(event => { event.events.forEach(t => { event_types[t] += 1 }) });
+    const spikes = Object.values(event_types).reduce((acc, event_type_count) => acc + event_type_count, 0);
+    return (
+        <span className={"metrics-events" + (isHourExpanded ? " metrics-events-hour-header-expanded" : "")}>
+            {spikes > 0 &&
+                <Button variant="plain" className="metrics-events-expander" onClick={() => onToggleHourExpanded(!isHourExpanded)} icon={isHourExpanded ? <AngleDownIcon /> : <AngleRightIcon />} />}
+            <time>{ timeformat.time(startTime) }</time>
+            <Flex flexWrap={{ default: 'nowrap' }} spaceItems={{ default: 'spaceItemsSm' }} alignItems={{ default: 'alignItemsBaseline' }} className="spikes_count">
+                {spikes >= 10 && <ResourcesFullIcon color="var(--resource-icon-color-full)" />}
+                {spikes >= 5 && spikes < 10 && <ResourcesAlmostFullIcon color="var(--resource-icon-color-middle)" />}
+                {spikes < 5 && spikes > 0 && <ResourcesAlmostEmptyIcon color="var(--resource-icon-color-empty)" />}
+                <FlexItem>
+                    {spikes ? cockpit.format(cockpit.ngettext("$0 spike", "$0 spikes", spikes), spikes) : _("No events")}
+                </FlexItem>
+            </Flex>
+            <span className="spikes_info">
+                {spikes > 0 && Object.entries(event_types)
+                        .filter(([_, count]) => count > 0)
+                        .map(([event_type, count]) => cockpit.format("$0 $1", count, RESOURCES[event_type].event_description))
+                        .join(", ")}
+            </span>
+        </span>
+    );
+};
 
 // null means "not initialized yet"
 const invalidService = proxy => proxy.state === null;
@@ -1487,7 +1523,7 @@ class MetricsHistory extends React.Component {
             interval: INTERVAL,
             source: "pcp-archive",
             timestamp: load_timestamp,
-            limit: limit,
+            limit,
             metrics: HISTORY_METRICS,
         });
 
@@ -1640,14 +1676,15 @@ class MetricsHistory extends React.Component {
             />;
 
         let nodata_alert = null;
-        if (!this.state.loading && this.state.hours.length > 0 && this.oldest_timestamp < this.state.hours[this.state.hours.length - 1]) {
+        const lastHourIndex = this.state.hours.length - 1;
+        if (!this.state.loading && this.state.hours.length > 0 && this.oldest_timestamp < this.state.hours[lastHourIndex]) {
             let t1, t2;
-            if (this.state.hours[0] - this.oldest_timestamp < 24 * MSEC_PER_H) {
+            if (this.state.hours[lastHourIndex] - this.oldest_timestamp < 24 * MSEC_PER_H) {
                 t1 = timeformat.time(this.oldest_timestamp);
-                t2 = timeformat.time(this.state.hours[0]);
+                t2 = timeformat.time(this.state.hours[lastHourIndex]);
             } else {
                 t1 = timeformat.dateTime(this.oldest_timestamp);
-                t2 = timeformat.dateTime(this.state.hours[0]);
+                t2 = timeformat.dateTime(this.state.hours[lastHourIndex]);
             }
             nodata_alert = <Alert className="nodata" variant="info" isInline title={ cockpit.format(_("No data available between $0 and $1"), t1, t2) } />;
         }
@@ -1689,10 +1726,10 @@ class MetricsHistory extends React.Component {
         );
 
         return (
-            <div className="metrics">
-                <div className="metrics-heading-sticky">
-                    <section className="metrics-heading" style={{ "--has-swap": swapTotal ? "var(--column-size)" : "var(--half-column-size)" }}>
-                        <Flex spaceItems={{ default: 'spaceItemsSm' }}>
+            <div className="metrics" style={{ "--graph-cnt": selections.length }}>
+                <PageGroup stickyOnBreakpoint={{ default: 'top' }}>
+                    <section className="metrics-heading">
+                        <Flex className="metrics-selectors" spaceItems={{ default: 'spaceItemsSm' }}>
                             <Select
                                 className="select-min metrics-label"
                                 aria-label={_("Jump to")}
@@ -1706,13 +1743,15 @@ class MetricsHistory extends React.Component {
                             </Select>
                             <Select
                                 toggleAriaLabel={_("Graph visibility options menu")}
-                                className="metrics-label"
+                                className="select-min metrics-label"
                                 variant={SelectVariant.checkbox}
                                 isCheckboxSelectionBadgeHidden
                                 isOpen={!!this.state.isOpenColumnVisibility}
                                 onSelect={(_, selection) => {
                                     const s = this.columns.find(itm => itm[1] == selection);
-                                    this.setState({ selectedVisibility: { ...this.state.selectedVisibility, [s[0]]: !this.state.selectedVisibility[s[0]] } });
+                                    this.setState(prevState => ({
+                                        selectedVisibility: { ...prevState.selectedVisibility, [s[0]]: !prevState.selectedVisibility[s[0]] }
+                                    }));
                                 }}
                                 onToggle={() => this.setState({ isOpenColumnVisibility: !this.state.isOpenColumnVisibility })}
                                 placeholderText={_("Graph visibility")}
@@ -1720,29 +1759,51 @@ class MetricsHistory extends React.Component {
                                 {columnVisibilityMenuItems}
                             </Select>
                         </Flex>
-                        <div className="metrics-graphs">
+                        <Stack className="metrics-label-graph-mobile">
+                            {[["cpu", _("CPU usage/load")], ["memory", _("Memory usage/swap")], ["disks", _("Disk I/O")], ["network", _("Network")]]
+                                    .filter(itm => this.state.selectedVisibility[itm[0]])
+                                    .map(itm => (
+                                        <Flex key={itm[0]} flexWrap={{ default: 'nowrap' }} spaceItems={{ default: 'spaceItemsSm' }} alignItems={{ default: 'alignItemsBaseline' }}>
+                                            <div className={"square label-" + itm[0]} />
+                                            <FlexItem>{itm[1]}</FlexItem>
+                                        </Flex>
+                                    ))}
+                        </Stack>
+                        <div className="metrics-graphs metrics-heading-graphs">
                             {this.state.selectedVisibility.cpu && <Label label={_("CPU")} items={[_("Usage"), _("Load")]} />}
                             {this.state.selectedVisibility.memory && <Label label={_("Memory")} items={[_("Usage"), ...swapTotal ? [_("Swap")] : []]} />}
                             {this.state.selectedVisibility.disks && <Label label={_("Disk I/O")} items={[_("Usage")]} />}
                             {this.state.selectedVisibility.network && <Label label={_("Network")} items={[_("Usage")]} />}
                         </div>
                     </section>
-                </div>
-                { this.state.hours.length > 0 &&
-                    <Card>
-                        <CardBody className="metrics-history">
-                            { this.state.hours.map((time, i) => <MetricsHour key={time} startTime={parseInt(time)}
-                                                                             selectedVisibility={this.state.selectedVisibility}
-                                                                             data={this.data[time]} clipLeading={i === 0}
-                            />) }
-                        </CardBody>
-                    </Card> }
-                {nodata_alert}
-                <div className="bottom-panel">
-                    { this.state.loading
-                        ? <EmptyStatePanel loading title={_("Loading...")} />
-                        : <Button onClick={this.handleMoreData}>{_("Load earlier data")}</Button> }
-                </div>
+                </PageGroup>
+                <PageSection className="metrics-history-section" variant={PageSectionVariants.light}>
+                    <>
+                        { this.state.hours.length > 0 &&
+                        <Card isPlain>
+                            <CardBody className="metrics-history">
+                                { this.state.hours.map((time, i) => {
+                                    const showHeader = i == 0 || timeformat.date(time) != timeformat.date(this.state.hours[i - 1]);
+
+                                    return (
+                                        <React.Fragment key={timeformat.dateTime(time)}>
+                                            {showHeader && <TextContent><Text component={TextVariants.h3} className="metrics-time"><time>{ timeformat.date(time) }</time></Text></TextContent>}
+                                            <MetricsHour key={time} startTime={parseInt(time)}
+                                                         selectedVisibility={this.state.selectedVisibility}
+                                                         data={this.data[time]} clipLeading={i == 0} />
+                                        </React.Fragment>
+                                    );
+                                })}
+                            </CardBody>
+                        </Card> }
+                        {nodata_alert}
+                        <div className="bottom-panel">
+                            { this.state.loading
+                                ? <EmptyStatePanel loading title={_("Loading...")} />
+                                : <Button onClick={this.handleMoreData}>{_("Load earlier data")}</Button> }
+                        </div>
+                    </>
+                </PageSection>
             </div>
         );
     }
@@ -1777,11 +1838,9 @@ export const Application = () => {
                 <PageSection>
                     <CurrentMetrics />
                 </PageSection>
-                <PageSection>
-                    <MetricsHistory firewalldRequest={setFirewalldRequest}
-                                    needsLogout={needsLogout}
-                                    setNeedsLogout={setNeedsLogout} />
-                </PageSection>
+                <MetricsHistory firewalldRequest={setFirewalldRequest}
+                                needsLogout={needsLogout}
+                                setNeedsLogout={setNeedsLogout} />
             </Page>
         </WithDialogs>);
 };

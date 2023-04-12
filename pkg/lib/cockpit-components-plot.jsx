@@ -22,13 +22,8 @@ import cockpit from "cockpit";
 import React, { useState, useRef, useLayoutEffect } from 'react';
 import { useEvent } from "hooks.js";
 
-import {
-    Button,
-    Dropdown,
-    DropdownToggle,
-    DropdownItem,
-    DropdownSeparator
-} from '@patternfly/react-core';
+import { Button } from "@patternfly/react-core/dist/esm/components/Button/index.js";
+import { Dropdown, DropdownItem, DropdownSeparator, DropdownToggle } from "@patternfly/react-core/dist/esm/components/Dropdown/index.js";
 
 import { AngleLeftIcon, AngleRightIcon, SearchMinusIcon } from '@patternfly/react-icons';
 
@@ -119,7 +114,7 @@ function time_ticks(data) {
     }
 
     return {
-        ticks: ticks,
+        ticks,
         formatter: format_tick,
         start: start_ms,
         end: end_ms
@@ -200,14 +195,14 @@ function value_ticks(data, config) {
         const unit_str = config.formatter(unit, config.base_unit, true)[1];
 
         return {
-            ticks: ticks,
+            ticks,
             formatter: (val) => config.formatter(val, unit_str, true)[0],
             unit: unit_str,
             max: ticks[ticks.length - 1]
         };
     } else {
         return {
-            ticks: ticks,
+            ticks,
             formatter: config.formatter,
             max: ticks[ticks.length - 1]
         };
@@ -436,7 +431,7 @@ export const SvgPlot = ({ title, config, plot_state, plot_id, className }) => {
                  // TODO: Figure out a way to handle a11y without entirely hiding the live-updating graphs
                  aria-hidden="true"
                  role="img"
-                 onMouseDown={plot_state.zoom_state && plot_state.zoom_state.enable_zoom_in ? start_dragging : null}
+                 onMouseDown={plot_state.zoom_state?.enable_zoom_in ? start_dragging : null}
                  onMouseUp={selection ? stop_dragging : null}
                  onMouseMove={selection ? drag : null}
                  onMouseLeave={cancel_dragging}>

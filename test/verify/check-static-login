@@ -23,7 +23,7 @@ import time
 import re
 
 import parent  # noqa: F401
-from testlib import MachineCase, nondestructive, skipBrowser, skipDistroPackage, skipImage, test_main, wait
+from testlib import MachineCase, nondestructive, skipBrowser, skipDistroPackage, skipImage, skipOstree, test_main, wait
 
 
 @nondestructive
@@ -119,14 +119,14 @@ account    required     pam_succeed_if.so user ingroup %s""" % m.get_admin_group
         b.login_and_go()
         self.check_shell()
 
-        if m.image not in ["fedora-coreos", "rhel4edge"]:  # logs in via ssh, not cockpit-session
+        if not m.ostree_image:  # logs in via ssh, not cockpit-session
             self.assertRegex(m.execute("who"), r"(^|\n)admin *web.*(\d+\.\d+|::)")
 
         # reload, which should log us in with the cookie
         b.reload()
         self.check_shell()
 
-        if m.image not in ["fedora-coreos", "rhel4edge"]:  # logs in via ssh, not cockpit-session
+        if not m.ostree_image:  # logs in via ssh, not cockpit-session
             self.assertRegex(m.execute("who"), r"(^|\n)admin *web.*(\d+\.\d+|::)")
 
         b.go("/users#/admin")
@@ -147,6 +147,15 @@ account    required     pam_succeed_if.so user ingroup %s""" % m.get_admin_group
         b.open("/system")
         b.wait_visible("#login")
         b.wait_not_visible("#option-group")
+
+        # LoginTo= also disables direct URL
+        b.open("/=192.168.99.99/")
+        b.wait_visible("#login")
+        b.wait_not_visible("#option-group")
+        # logging in does not go via cockpit-ssh (which would cause a connection failure)
+        b.try_login()
+        # this isn't the most helpful error message, but this is essentially hacking
+        b.wait_text("#login-error-message", "Wrong user name or password")
 
         # Default options be to display these options
         m.execute("rm /etc/cockpit/cockpit.conf")
@@ -189,7 +198,7 @@ account    required     pam_succeed_if.so user ingroup %s""" % m.get_admin_group
                                     r"pam_succeed_if\(cockpit:auth\): requirement .* not met by user .*",
                                     "noise-rc-.*")
 
-    @skipImage("logs in via ssh, not cockpit-session", "fedora-coreos", "rhel4edge")
+    @skipOstree("logs in via ssh, not cockpit-session")
     def testLogging(self):
         m = self.machine
         b = self.browser
@@ -389,8 +398,8 @@ account    required     pam_succeed_if.so user ingroup %s""" % m.get_admin_group
 
         self.allow_restart_journal_messages()
 
-    @skipImage("No tlog", "debian-stable", "debian-testing", "ubuntu-stable", "ubuntu-2204",
-               "rhel-8-7", "rhel-9-1", "centos-8-stream", "fedora-coreos", "rhel4edge", "arch")
+    @skipImage("No tlog", "debian-*", "ubuntu-*", "arch", "centos-8-stream")
+    @skipOstree("No tlog")
     def testSessionRecordingShell(self):
         m = self.machine
         b = self.browser
@@ -444,8 +453,8 @@ account    required     pam_succeed_if.so user ingroup %s""" % m.get_admin_group
                                     "couldn't parse login input: Malformed input",
                                     "couldn't parse login input: Authentication failed")
 
-    @skipImage("No SELinux", "debian-stable", "debian-testing", "ubuntu-stable", "ubuntu-2204", "arch")
-    @skipImage("No semanage", "fedora-coreos", "rhel4edge")
+    @skipImage("No SELinux", "debian-*", "ubuntu-*", "arch")
+    @skipOstree("No semanage")
     def testSELinuxRestrictedUser(self):
         m = self.machine
         b = self.browser
@@ -561,7 +570,7 @@ account    required     pam_succeed_if.so user ingroup %s""" % m.get_admin_group
 
         self.check_shell()
 
-    @skipImage("Starting on OSTree is weird", "fedora-coreos", "rhel4edge")
+    @skipOstree("Starting on OSTree is weird")
     def testFailingWebsocket(self, safari=False, cacert=False):
         m = self.machine
         b = self.browser
@@ -599,12 +608,12 @@ account    required     pam_succeed_if.so user ingroup %s""" % m.get_admin_group
             b.wait_not_present("#safari-cert-help")
 
     @skipBrowser("Enough when only chromium pretends to be a different browser", "firefox")
-    @skipImage("Starting on OSTree is weird", "fedora-coreos", "rhel4edge")
+    @skipOstree("Starting on OSTree is weird")
     def testFailingWebsocketSafari(self):
         self.testFailingWebsocket(safari=True, cacert=True)
 
     @skipBrowser("Enough when only chromium pretends to be a different browser", "firefox")
-    @skipImage("Starting on OSTree is weird", "fedora-coreos", "rhel4edge")
+    @skipOstree("Starting on OSTree is weird")
     def testFailingWebsocketSafariNoCA(self):
         self.testFailingWebsocket(safari=True, cacert=False)
 
@@ -713,8 +722,8 @@ account    required     pam_succeed_if.so user ingroup %s""" % m.get_admin_group
         # and login again
         expect_successful_login("admin", "foobar")
 
-        # fedora-coreos and rhel4edge log in via sshd, which forbids root logging in with a password
-        if m.image not in ["fedora-coreos", "rhel4edge"]:
+        # ostree images log in via sshd, which forbids root logging in with a password
+        if not m.ostree_image:
             # make sure root never gets locked out
             for n in range(1, 10):
                 expect_failed_login("root", "bad", n)
@@ -723,7 +732,7 @@ account    required     pam_succeed_if.so user ingroup %s""" % m.get_admin_group
         self.allow_journal_messages(".*[aA]ccount .*locked due to .* failed logins.*")
         self.allow_journal_messages(".*minutes left to unlock.*")
 
-    @skipImage("root logins disabled by default with ssh", "fedora-coreos", "rhel4edge")
+    @skipOstree("root logins disabled by default with ssh")
     def testPamAccess(self):
         b = self.browser
         m = self.machine
@@ -745,7 +754,7 @@ account    required     pam_succeed_if.so user ingroup %s""" % m.get_admin_group
 
         self.allow_journal_messages(r"cockpit-session: user account access failed.*root.*")
 
-    @skipImage("sssd not available", "fedora-coreos", "rhel4edge")
+    @skipOstree("sssd not available")
     def testClientCertAuthentication(self):
         m = self.machine
 
@@ -817,11 +826,6 @@ matchrule = <SUBJECT>^DC=LAN,DC=COCKPIT,CN=alice$
         # it into the browser.
 
         def do_test(authopts, expected, not_expected=[], session_leader=None):
-            if m.image in ["debian-testing", "ubuntu-stable"]:
-                # HACK: works around https://bugs.debian.org/1001377
-                #       and https://bugs.launchpad.net/ubuntu/+source/sssd/+bug/1989356
-                m.execute("rm -f /var/log/sssd/*")
-
             m.start_cockpit(tls=True)
             output = m.execute(['curl', '-ksS', '-D-'] + authopts + ['https://localhost:9090/cockpit/login'])
             for s in expected:
@@ -915,6 +919,8 @@ matchrule = <SUBJECT>^DC=LAN,DC=COCKPIT,CN=alice$
         m.execute("useradd --create-home user")
         m.execute("echo user:foobar | chpasswd")
         m.start_cockpit()
+        # the quick succession of login/logout is too much for packagekit's brain
+        self.disable_preload("packagekit", "playground", "systemd")
 
         def check_server(server, expect_fp_ack):
             b.open('/')

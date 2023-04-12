@@ -24,7 +24,7 @@ import fcntl
 import logging
 import os
 import select
-import socket
+import signal
 import struct
 import subprocess
 import termios
@@ -271,9 +271,8 @@ class SubprocessTransport(_Transport, asyncio.SubprocessTransport):
 
     _returncode: Optional[int] = None
 
-    _sock: Optional[socket.socket] = None
     _pty_fd: Optional[int] = None
-    _process: 'subprocess.Popen[bytes]'
+    _process: Optional['subprocess.Popen[bytes]'] = None
     _stderr: Optional['Spooler']
 
     @staticmethod
@@ -304,10 +303,6 @@ class SubprocessTransport(_Transport, asyncio.SubprocessTransport):
         else:
             return None
 
-    def send_stderr_fd(self) -> None:
-        if self._sock is not None:
-            socket.send_fds(self._sock, [b' '], [2])
-
     def _exited(self, pid: int, code: int) -> None:
         # NB: per AbstractChildWatcher API, this handler should be thread-safe,
         # but we only ever use non-threaded child watcher implementations, so
@@ -319,7 +314,7 @@ class SubprocessTransport(_Transport, asyncio.SubprocessTransport):
         # zero.  For that reason, we need to store our own copy of the return
         # status.  See https://github.com/python/cpython/issues/59960
         assert isinstance(self._protocol, SubprocessProtocol)
-        assert self._process.pid == pid
+        assert self._process is not None and self._process.pid == pid
         self._returncode = code
         logger.debug('Process exited with status %d', self._returncode)
         if not self._closing:
@@ -333,31 +328,32 @@ class SubprocessTransport(_Transport, asyncio.SubprocessTransport):
                  window: Optional[Dict[str, int]] = None,
                  **kwargs: Any):
         if pty:
-            our_fd, session_fd = os.openpty()
-            kwargs['stderr'] = session_fd
-            self._eio_is_eof = True
-            self._pty_fd = our_fd
+            self._pty_fd, session_fd = os.openpty()
 
             if window is not None:
                 self.set_window_size(**window)
-        else:
-            self._sock, sock = socket.socketpair()
-            our_fd = self._sock.fileno()
-            session_fd = sock.detach()
 
-        try:
+            kwargs['stderr'] = session_fd
             self._process = subprocess.Popen(args,
                                              stdin=session_fd, stdout=session_fd,
                                              start_new_session=True, **kwargs)
-        finally:
             os.close(session_fd)
+
+            in_fd, out_fd = self._pty_fd, self._pty_fd
+            self._eio_is_eof = True
+
+        else:
+            self._process = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, **kwargs)
+            assert self._process.stdin and self._process.stdout
+            in_fd = self._process.stdout.fileno()
+            out_fd = self._process.stdin.fileno()
 
         if self._process.stderr is not None:
             self._stderr = Spooler(loop, self._process.stderr.fileno())
         else:
             self._stderr = None
 
-        super().__init__(loop, protocol, our_fd, our_fd)
+        super().__init__(loop, protocol, in_fd, out_fd)
 
         self._get_watcher(loop).add_child_handler(self._process.pid, self._exited)
 
@@ -366,13 +362,17 @@ class SubprocessTransport(_Transport, asyncio.SubprocessTransport):
         fcntl.ioctl(self._pty_fd, termios.TIOCSWINSZ, struct.pack('2H4x', rows, cols))
 
     def can_write_eof(self) -> bool:
-        return self._sock is not None
+        assert self._process is not None
+        return self._process.stdin is not None
 
     def _write_eof_now(self) -> None:
-        assert self._sock is not None
-        self._sock.shutdown(socket.SHUT_WR)
+        assert self._process is not None
+        assert self._process.stdin is not None
+        self._process.stdin.close()
+        self._out_fd = -1
 
     def get_pid(self) -> int:
+        assert self._process is not None
         return self._process.pid
 
     def get_returncode(self) -> Optional[int]:
@@ -381,22 +381,45 @@ class SubprocessTransport(_Transport, asyncio.SubprocessTransport):
     def get_pipe_transport(self, fd: int) -> asyncio.Transport:
         raise NotImplementedError
 
-    def send_signal(self, signal: int) -> None:  # type: ignore # https://github.com/python/mypy/issues/13885
-        self._process.send_signal(signal)
+    def send_signal(self, sig: signal.Signals) -> None:  # type: ignore # https://github.com/python/mypy/issues/13885
+        assert self._process is not None
+        # We try to avoid using subprocess.send_signal().  It contains a call
+        # to waitpid() internally to avoid signalling the wrong process (if a
+        # PID gets reused), but:
+        #
+        #  - we already detect the process exiting via our PidfdChildWatcher
+        #
+        #  - the check is actually harmful since collecting the process via
+        #    waitpid() prevents the PidfdChildWatcher from doing the same,
+        #    resulting in an error.
+        #
+        # It's on us now to check it, but that's easy:
+        if self._returncode is not None:
+            logger.debug("won't attempt %s to process %i.  It exited already.", sig, self._process.pid)
+            return
+
+        try:
+            os.kill(self._process.pid, sig)
+            logger.debug('sent %s to process %i', sig, self._process.pid)
+        except ProcessLookupError:
+            # already gone? fine
+            logger.debug("can't send %s to process %i.  It's exited just now.", sig, self._process.pid)
 
     def terminate(self) -> None:
-        self._process.terminate()
+        self.send_signal(signal.SIGTERM)
 
     def kill(self) -> None:
-        self._process.kill()
+        self.send_signal(signal.SIGKILL)
 
     def _close(self) -> None:
+        if self._process is not None:
+            try:
+                self.terminate()  # best effort...
+            except PermissionError:
+                logger.debug("can't kill %i due to EPERM", self._process.pid)
         if self._pty_fd is not None:
             os.close(self._pty_fd)
             self._pty_fd = None
-        if self._sock is not None:
-            self._sock.close()
-            self._sock = None
 
 
 class StdioTransport(_Transport):

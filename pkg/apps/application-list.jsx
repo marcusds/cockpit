@@ -19,15 +19,12 @@
 
 import cockpit from "cockpit";
 import React, { useState } from "react";
-import {
-    Alert, AlertActionCloseButton,
-    Button, Card,
-    DataList, DataListItem, DataListItemRow, DataListCell,
-    DataListAction,
-    DataListItemCells,
-    Flex, FlexItem,
-    Page, PageSection, PageSectionVariants,
-} from "@patternfly/react-core";
+import { Alert, AlertActionCloseButton } from "@patternfly/react-core/dist/esm/components/Alert/index.js";
+import { Button } from "@patternfly/react-core/dist/esm/components/Button/index.js";
+import { Card } from "@patternfly/react-core/dist/esm/components/Card/index.js";
+import { DataList, DataListAction, DataListCell, DataListItem, DataListItemCells, DataListItemRow } from "@patternfly/react-core/dist/esm/components/DataList/index.js";
+import { Flex, FlexItem } from "@patternfly/react-core/dist/esm/layouts/Flex/index.js";
+import { Page, PageSection, PageSectionVariants } from "@patternfly/react-core/dist/esm/components/Page/index.js";
 import { RebootingIcon } from "@patternfly/react-icons";
 
 import * as PackageKit from "./packagekit.js";
@@ -50,7 +47,11 @@ const ApplicationRow = ({ comp, progress, progress_title, action }) => {
 
     let summary_or_progress;
     if (progress) {
-        summary_or_progress = <ProgressBar title={progress_title} data={progress} />;
+        summary_or_progress = (
+            <Flex spaceItems={{ default: 'spaceItemsSm' }} alignItems={{ default: 'alignItemsCenter' }}>
+                <span id={comp.name + "-progress"} className="progress-title-span">{progress_title}</span>
+                <ProgressBar title={progress_title} data={progress} ariaLabelledBy={comp.name + "-progress"} />
+            </Flex>);
     } else {
         if (error) {
             summary_or_progress = (

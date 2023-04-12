@@ -217,23 +217,22 @@
 import cockpit from "cockpit";
 
 import React, { useState } from "react";
-import {
-    Alert,
-    FormSelect, FormSelectOption,
-    Button,
-    Checkbox,
-    DataList, DataListItem, DataListCheck, DataListItemRow, DataListItemCells, DataListCell,
-    Form, FormGroup,
-    Grid, GridItem,
-    Radio,
-    Select as TypeAheadSelect, SelectOption, SelectVariant,
-    Slider,
-    Spinner, Split,
-    TextInput as TextInputPF4,
-    Popover,
-    HelperText, HelperTextItem,
-    List, ListItem
-} from "@patternfly/react-core";
+import { Alert } from "@patternfly/react-core/dist/esm/components/Alert/index.js";
+import { FormSelect, FormSelectOption } from "@patternfly/react-core/dist/esm/components/FormSelect/index.js";
+import { Button } from "@patternfly/react-core/dist/esm/components/Button/index.js";
+import { Checkbox } from "@patternfly/react-core/dist/esm/components/Checkbox/index.js";
+import { DataList, DataListCell, DataListCheck, DataListItem, DataListItemCells, DataListItemRow } from "@patternfly/react-core/dist/esm/components/DataList/index.js";
+import { Form, FormGroup } from "@patternfly/react-core/dist/esm/components/Form/index.js";
+import { Grid, GridItem } from "@patternfly/react-core/dist/esm/layouts/Grid/index.js";
+import { Radio } from "@patternfly/react-core/dist/esm/components/Radio/index.js";
+import { Select as TypeAheadSelect, SelectOption, SelectVariant } from "@patternfly/react-core/dist/esm/components/Select/index.js";
+import { Slider } from "@patternfly/react-core/dist/esm/components/Slider/index.js";
+import { Spinner } from "@patternfly/react-core/dist/esm/components/Spinner/index.js";
+import { Split } from "@patternfly/react-core/dist/esm/layouts/Split/index.js";
+import { TextInput as TextInputPF4 } from "@patternfly/react-core/dist/esm/components/TextInput/index.js";
+import { Popover } from "@patternfly/react-core/dist/esm/components/Popover/index.js";
+import { HelperText, HelperTextItem } from "@patternfly/react-core/dist/esm/components/HelperText/index.js";
+import { List, ListItem } from "@patternfly/react-core/dist/esm/components/List/index.js";
 import { ExclamationTriangleIcon, InfoIcon, HelpIcon } from "@patternfly/react-icons";
 
 import { show_modal_dialog, apply_modal_dialog } from "cockpit-components-dialog.jsx";
@@ -358,7 +357,7 @@ export const dialog_open = (def) => {
             : def.Title);
         return {
             id: "dialog",
-            title: title,
+            title,
             body: <Body body={def.Body}
                         teardown={def.Teardown}
                         fields={nested_fields}
@@ -378,44 +377,58 @@ export const dialog_open = (def) => {
         dlg.setFooterProps(footer_props(running_title, running_promise));
     };
 
+    function run_action(progress_callback, variant) {
+        const func = () => {
+            return validate()
+                    .then(() => {
+                        const visible_values = { variant };
+                        fields.forEach(f => {
+                            if (is_visible(f, values))
+                                visible_values[f.tag] = values[f.tag];
+                        });
+                        if (def.Action.wrapper)
+                            return def.Action.wrapper(visible_values, progress_callback,
+                                                      def.Action.action);
+                        else
+                            return def.Action.action(visible_values, progress_callback);
+                    })
+                    .catch(errs => {
+                        if (errs && errs.toString() != "[object Object]") {
+                        // Log errors from failed actions, for debugging and
+                        // to allow the test suite to catch known issues.
+                            console.warn(errs.toString());
+                        }
+                        errors = errs;
+                        update();
+                        return Promise.reject();
+                    });
+        };
+        return client.run(func);
+    }
+
     const footer_props = (running_title, running_promise) => {
         let actions = [];
         if (def.Action) {
             actions = [
                 {
                     caption: def.Action.Title,
-                    style: (def.Action.Danger || def.Action.DangerButton) ? "danger" : "primary",
+                    style: "primary",
+                    danger: def.Action.Danger || def.Action.DangerButton,
                     disabled: running_promise != null,
-                    clicked: function (progress_callback) {
-                        const func = () => {
-                            return validate()
-                                    .then(() => {
-                                        const visible_values = { };
-                                        fields.forEach(f => {
-                                            if (is_visible(f, values))
-                                                visible_values[f.tag] = values[f.tag];
-                                        });
-                                        if (def.Action.wrapper)
-                                            return def.Action.wrapper(visible_values, progress_callback,
-                                                                      def.Action.action);
-                                        else
-                                            return def.Action.action(visible_values, progress_callback);
-                                    })
-                                    .catch(errs => {
-                                        if (errs && errs.toString() != "[object Object]") {
-                                            // Log errors from failed actions, for debugging and
-                                            // to allow the test suite to catch known issues.
-                                            console.warn(errs.toString());
-                                        }
-                                        errors = errs;
-                                        update();
-                                        return Promise.reject();
-                                    });
-                        };
-                        return client.run(func);
-                    }
+                    clicked: progress_callback => run_action(progress_callback, null),
                 }
             ];
+
+            if (def.Action.Variants)
+                for (const v of def.Action.Variants) {
+                    actions.push({
+                        caption: v.Title,
+                        style: "secondary",
+                        danger: def.Action.Danger || def.Action.DangerButton,
+                        disabled: running_promise != null,
+                        clicked: progress_callback => run_action(progress_callback, v.tag),
+                    });
+                }
         }
 
         const extra = (
@@ -434,7 +447,7 @@ export const dialog_open = (def) => {
                 </>
                 : null),
             extra_element: extra,
-            actions: actions,
+            actions,
             cancel_button: def.Action ? {} : { text: _("Close"), variant: "secondary" }
         };
     };
@@ -525,9 +538,9 @@ export const dialog_open = (def) => {
 
 export const TextInput = (tag, title, options) => {
     return {
-        tag: tag,
-        title: title,
-        options: options,
+        tag,
+        title,
+        options,
         initial_value: options.value || "",
 
         render: (val, change, validated) =>
@@ -542,9 +555,9 @@ export const TextInput = (tag, title, options) => {
 
 export const PassInput = (tag, title, options) => {
     return {
-        tag: tag,
-        title: title,
-        options: options,
+        tag,
+        title,
+        options,
         initial_value: options.value || "",
 
         render: (val, change, validated) =>
@@ -580,9 +593,9 @@ const TypeAheadSelectElement = ({ options, change }) => {
 
 export const ComboBox = (tag, title, options) => {
     return {
-        tag: tag,
-        title: title,
-        options: options,
+        tag,
+        title,
+        options,
         initial_value: options.value || "",
 
         render: (val, change, validated) => {
@@ -595,9 +608,9 @@ export const ComboBox = (tag, title, options) => {
 
 export const SelectOne = (tag, title, options) => {
     return {
-        tag: tag,
-        title: title,
-        options: options,
+        tag,
+        title,
+        options,
         initial_value: options.value || options.choices[0].value,
 
         render: (val, change, validated) => {
@@ -617,9 +630,9 @@ export const SelectOne = (tag, title, options) => {
 
 export const SelectOneRadio = (tag, title, options) => {
     return {
-        tag: tag,
-        title: title,
-        options: options,
+        tag,
+        title,
+        options,
         initial_value: options.value || options.choices[0].value,
         hasNoPaddingTop: true,
 
@@ -639,9 +652,9 @@ export const SelectOneRadio = (tag, title, options) => {
 
 export const SelectRow = (tag, headers, options) => {
     return {
-        tag: tag,
+        tag,
         title: null,
-        options: options,
+        options,
         initial_value: options.value || options.choices[0].value,
 
         render: (val, change) => {
@@ -674,9 +687,9 @@ function nice_block_name(block) {
 
 export const SelectSpaces = (tag, title, options) => {
     return {
-        tag: tag,
-        title: title,
-        options: options,
+        tag,
+        title,
+        options,
         initial_value: [],
 
         render: (val, change) => {
@@ -729,9 +742,9 @@ export const SelectSpaces = (tag, title, options) => {
 
 export const SelectSpace = (tag, title, options) => {
     return {
-        tag: tag,
-        title: title,
-        options: options,
+        tag,
+        title,
+        options,
         initial_value: null,
 
         render: (val, change) => {
@@ -800,9 +813,9 @@ const CheckBoxComponent = ({ tag, val, title, tooltip, update_function }) => {
 
 export const CheckBoxes = (tag, title, options) => {
     return {
-        tag: tag,
-        title: title,
-        options: options,
+        tag,
+        title,
+        options,
         initial_value: options.value || { },
         hasNoPaddingTop: true,
 
@@ -857,7 +870,7 @@ export const Skip = (className, options) => {
     return {
         tag: false,
         title: null,
-        options: options,
+        options,
         initial_value: false,
 
         render: () => {
@@ -868,7 +881,7 @@ export const Skip = (className, options) => {
 
 export const Message = (text, options) => {
     return {
-        options: options,
+        options,
 
         render: () => <HelperText><HelperTextItem icon={<InfoIcon />}>{text}</HelperTextItem></HelperText>,
     };
@@ -910,7 +923,7 @@ class SizeSliderElement extends React.Component {
              * the text input without getting the text changed all the
              * time by rounding, etc.
              */
-            onChange({ text: value, unit: unit });
+            onChange({ text: value, unit });
         };
 
         let slider_val, text_val;
@@ -924,7 +937,6 @@ class SizeSliderElement extends React.Component {
 
         const change_unit = (u) => this.setState({
             unit: Number(u),
-            text: (text_val / this.state.unit) * Number(u)
         });
 
         return (
@@ -997,11 +1009,11 @@ export const SizeSlider = (tag, title, options) => {
        have to use it below for the 'max' option in order to pick up
        changes to it.
      */
-    const all_options = Object.assign({ }, options, { validate: validate });
+    const all_options = Object.assign({ }, options, { validate });
 
     return {
-        tag: tag,
-        title: title,
+        tag,
+        title,
         options: all_options,
         initial_value: options.value || options.max || 0,
 

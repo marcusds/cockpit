@@ -18,7 +18,7 @@
 # along with Cockpit; If not, see <http://www.gnu.org/licenses/>.
 
 import parent  # noqa: F401
-from testlib import MachineCase, nondestructive, skipDistroPackage, skipImage, test_main, timeout
+from testlib import MachineCase, nondestructive, skipDistroPackage, skipImage, skipOstree, test_main, timeout
 from lib.constants import TEST_OS_DEFAULT
 
 
@@ -49,8 +49,8 @@ class KdumpHelpers(MachineCase):
         self.machine.wait_boot(timeout_sec=300)
 
 
-@skipImage("kexec-tools not installed", "fedora-coreos", "rhel4edge", "debian-stable",
-           "debian-testing", "ubuntu-2204", "ubuntu-stable", "arch")
+@skipOstree("kexec-tools not installed")
+@skipImage("kexec-tools not installed", "debian-*", "ubuntu-*", "arch")
 @timeout(900)
 @skipDistroPackage()
 class TestKdump(KdumpHelpers):
@@ -111,13 +111,9 @@ class TestKdump(KdumpHelpers):
         b.set_val("#kdump-settings-location", "nfs")
         serverInput = "#kdump-settings-nfs-server"
         b.set_input_text(serverInput, "")
-        b.click(f"#kdump-settings-dialog button{self.primary_btn_class}")
-        b.wait_in_text("#kdump-settings-dialog h4.pf-c-alert__title", "Unable to save settings: nfs server is empty")
-        # no further details/journal
-        self.assertFalse(b.is_present("#kdump-settings-dialog .pf-c-code-block__code"))
+        b.wait_visible(f"#kdump-settings-dialog button{self.primary_btn_class}:disabled")
         b.set_input_text(serverInput, "localhost")
-        b.click(f"#kdump-settings-dialog button{self.primary_btn_class}")
-        b.wait_in_text("#kdump-settings-dialog h4.pf-c-alert__title", "Unable to save settings: nfs export is empty")
+        b.wait_visible(f"#kdump-settings-dialog button{self.primary_btn_class}:disabled")
         b.click("#kdump-settings-dialog button.cancel")
         b.wait_not_present("#kdump-settings-dialog")
 
@@ -376,8 +372,8 @@ class TestKdump(KdumpHelpers):
         b.wait_text("#kdump-target-info", "Remote over CIFS/SMB")
 
 
-@skipImage("kexec-tools not installed", "fedora-coreos", "rhel4edge", "debian-stable",
-           "debian-testing", "ubuntu-2204", "ubuntu-stable", "arch")
+@skipOstree("kexec-tools not installed")
+@skipImage("kexec-tools not installed", "debian-*", "ubuntu-*", "arch")
 @timeout(900)
 @skipDistroPackage()
 class TestKdumpNFS(KdumpHelpers):
@@ -440,6 +436,7 @@ class TestKdumpNFS(KdumpHelpers):
         # dumps directory does not exist, error
         b.wait_in_text("#kdump-settings-dialog h4.pf-c-alert__title", "Unable to save settings")
         # also shows error details
+        b.click("#kdump-settings-dialog div.pf-c-alert__toggle button")
         b.wait_in_text("#kdump-settings-dialog .pf-c-code-block__code", 'does not exist in dump target "10.111.113.2:/srv/kdump"')
         # create the directory on the NFS server
         self.machines["nfs"].execute("mkdir /srv/kdump/dumps")

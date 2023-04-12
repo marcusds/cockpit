@@ -19,14 +19,10 @@
 
 import cockpit from "cockpit";
 import React from "react";
-import {
-    Alert, Card, CardHeader, CardActions, CardTitle, CardBody,
-    Text, TextVariants,
-    DescriptionList,
-    DescriptionListTerm,
-    DescriptionListGroup,
-    DescriptionListDescription
-} from "@patternfly/react-core";
+import { Alert } from "@patternfly/react-core/dist/esm/components/Alert/index.js";
+import { Card, CardActions, CardBody, CardHeader, CardTitle } from "@patternfly/react-core/dist/esm/components/Card/index.js";
+import { Text, TextVariants } from "@patternfly/react-core/dist/esm/components/Text/index.js";
+import { DescriptionList, DescriptionListDescription, DescriptionListGroup, DescriptionListTerm } from "@patternfly/react-core/dist/esm/components/DescriptionList/index.js";
 import { get_active_usage, teardown_active_usage, fmt_size, decode_filename, reload_systemd } from "./utils.js";
 import {
     dialog_open, SizeSlider, BlockingMessage, TeardownMessage, init_active_usage_processes
@@ -35,8 +31,8 @@ import { StdDetailsLayout } from "./details.jsx";
 import { Block } from "./content-views.jsx";
 import { StorageButton, StorageOnOff, StorageBlockNavLink } from "./storage-controls.jsx";
 
-import inotify_py from "raw-loader!inotify.py";
-import vdo_monitor_py from "raw-loader!./vdo-monitor.py";
+import inotify_py from "inotify.py";
+import vdo_monitor_py from "./vdo-monitor.py";
 
 const _ = cockpit.gettext;
 

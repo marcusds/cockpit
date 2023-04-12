@@ -21,7 +21,7 @@ import time
 import os
 
 import parent  # noqa: F401
-from testlib import MachineCase, nondestructive, skipDistroPackage, skipImage, test_main
+from testlib import MachineCase, nondestructive, skipDistroPackage, skipOstree, test_main
 
 RHEL_DOC_BASE = "https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/8/html/managing_systems_using_the_rhel_8_web_console"
 
@@ -112,9 +112,7 @@ OnCalendar=daily
         b.enter_page("/system/services")
         b.reload()
         b.enter_page("/system/services")
-        # FIXME: Services page is too slow
-        with b.wait_timeout(30):
-            b.wait_text(".service-name", "Test Service")
+        b.wait_text(".service-name", "Test Service")
         b.switch_to_top()
         self.checkDocs(["Managing services"])
         b.click("#toggle-docs")
@@ -130,9 +128,7 @@ OnCalendar=daily
 
         m.restart_cockpit()
         b.relogin("/system/services")
-        # FIXME: Services page is too slow
-        with b.wait_timeout(30):
-            b.wait_text(".service-name", "Test Service")
+        b.wait_text(".service-name", "Test Service")
 
         # check that navigating away and back preserves place
         b.click_system_menu("/system")
@@ -504,7 +500,7 @@ OnCalendar=daily
         b.key_press(chr(40), use_ord=True)  # arrow down
         b.key_press(chr(40), use_ord=True)  # arrow down
         b.key_press("\r")
-        if m.image in ["fedora-coreos", "rhel4edge"]:
+        if m.ostree_image:
             b.enter_page("/users")
         else:
             b.enter_page("/storage")
@@ -569,6 +565,7 @@ OnCalendar=daily
 
         stuff = os.path.join(self.vm_tmpdir, "stuff")
         # prepare a directory for testing file autocomplete widget
+        m.execute(f"mkdir -p {stuff}/dir")
         m.execute(f"mkdir -p {stuff}/dir1")
         m.write(f"{stuff}/file1.txt", "")
 
@@ -579,9 +576,18 @@ OnCalendar=daily
         b.key_press(stuff + "/")
         # need to wait for the widget's "fast typing" inhibition delay to trigger the completion popup
         b.wait_in_text("#file-autocomplete-widget li:nth-of-type(1) button", stuff + "/")
-        b.wait_in_text("#file-autocomplete-widget li:nth-of-type(2) button", "dir1/")
-        b.wait_in_text("#file-autocomplete-widget li:nth-of-type(3) button", "file1.txt")
+        b.wait_in_text("#file-autocomplete-widget li:nth-of-type(2) button", "dir/")
+        b.wait_in_text("#file-autocomplete-widget li:nth-of-type(3) button", "dir1/")
+        b.wait_in_text("#file-autocomplete-widget li:nth-of-type(4) button", "file1.txt")
         b.click("#file-autocomplete-widget li:nth-of-type(2) button")
+
+        # clear the file completion widget
+        b.click("#demo-file-ac div:first-of-type div:first-of-type button:nth-of-type(1)")
+        # test if input matches one entry, but is the prefix of other entry, widget should not descend into directory
+        b.focus("#demo-file-ac input[type=text]")
+        b.key_press(stuff + "/dir")
+        b.wait_in_text("#file-autocomplete-widget li:nth-of-type(1) button", stuff + "/dir")
+        b.wait_in_text("#file-autocomplete-widget li:nth-of-type(2) button", stuff + "/dir1")
 
         # clear the file completion widget
         b.click("#demo-file-ac div:first-of-type div:first-of-type button:nth-of-type(1)")
@@ -589,8 +595,8 @@ OnCalendar=daily
         b.focus("#demo-file-ac input[type=text]")
         b.key_press(stuff + "/")
         b.wait_in_text("#file-autocomplete-widget li:nth-of-type(1) button", stuff + "/")
-        b.wait_in_text("#file-autocomplete-widget li:nth-of-type(3) button", "file1.txt")
-        b.click("#file-autocomplete-widget li:nth-of-type(3) button")
+        b.wait_in_text("#file-autocomplete-widget li:nth-of-type(4) button", "file1.txt")
+        b.click("#file-autocomplete-widget li:nth-of-type(4) button")
         b.wait_not_present("#file-autocomplete-widget li")
 
         # now update file1, check robustness with dynamic events
@@ -602,7 +608,7 @@ OnCalendar=daily
         b.wait_in_text("#file-autocomplete-widget li:nth-of-type(1) button", "file1.txt")
         b.key_press(["\b"] * 4)
         # input is now $stuff/, so all listings should be available
-        b.wait_in_text("#file-autocomplete-widget li:nth-of-type(3) button", "file1.txt")
+        b.wait_in_text("#file-autocomplete-widget li:nth-of-type(4) button", "file1.txt")
 
         # add new file
         m.execute(f"touch {stuff}/other")
@@ -614,9 +620,9 @@ OnCalendar=daily
         b.key_press(["\b"] * 6)
         time.sleep(1)
         b.key_press("stuff/")
-        b.wait_in_text("#file-autocomplete-widget li:nth-of-type(4) button", "other")
+        b.wait_in_text("#file-autocomplete-widget li:nth-of-type(5) button", "other")
 
-    @skipImage("No PCP available", "fedora-coreos", "rhel4edge")
+    @skipOstree("No PCP available")
     def testPlots(self):
         b = self.browser
         m = self.machine
@@ -799,7 +805,7 @@ OnCalendar=daily
         assert_location("/system")
 
         # CoreOS does not keep login history
-        if self.machine.image not in ["fedora-coreos", "rhel4edge"]:
+        if not self.machine.ostree_image:
 
             b.enter_page("/system")
             b.click("button:contains(View login history)")
@@ -812,6 +818,16 @@ OnCalendar=daily
             b.enter_page("/system")
             b.switch_to_top()
             assert_location("/system")
+
+    def testAllNavEntries(self):
+        b = self.browser
+        self.login_and_go()
+
+        # the <a> links should be unique by their href= attributes, so get these
+        hrefs = b.eval_js("[...document.querySelectorAll('#nav-system .nav-item a')].map(el => el.getAttribute('href'))")
+        for href in hrefs:
+            b.click(f"#nav-system .nav-item a[href='{href}']")
+            b.wait_visible(f"iframe.container-frame[name='cockpit1:localhost{href}'][data-loaded]")
 
 
 if __name__ == '__main__':

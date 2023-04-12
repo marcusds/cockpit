@@ -20,163 +20,230 @@
 import '../lib/patternfly/patternfly-4-cockpit.scss';
 import cockpit from "cockpit";
 
-import React from "react";
-import {
-    Button, Checkbox,
-    Card, CardBody,
-    CodeBlockCode,
-    Flex,
-    Form, FormGroup, FormSection,
-    FormSelect, FormSelectOption,
-    Page, PageSection, PageSectionVariants,
-    DescriptionList, DescriptionListGroup, DescriptionListTerm, DescriptionListDescription,
-    Spinner, Switch,
-    TextInput, Title, Tooltip, TooltipPosition,
-} from "@patternfly/react-core";
+import React, { useEffect, useState } from "react";
+import { Button } from "@patternfly/react-core/dist/esm/components/Button/index.js";
+import { Checkbox } from "@patternfly/react-core/dist/esm/components/Checkbox/index.js";
+import { Card, CardBody } from "@patternfly/react-core/dist/esm/components/Card/index.js";
+import { ExclamationCircleIcon } from '@patternfly/react-icons/dist/esm/icons/exclamation-circle-icon';
+import { HelperText, HelperTextItem } from "@patternfly/react-core/dist/esm/components/HelperText/index.js";
+import { Flex } from "@patternfly/react-core/dist/esm/layouts/Flex/index.js";
+import { Form, FormGroup, FormSection } from "@patternfly/react-core/dist/esm/components/Form/index.js";
+import { FormSelect, FormSelectOption } from "@patternfly/react-core/dist/esm/components/FormSelect/index.js";
+import { Page, PageSection, PageSectionVariants } from "@patternfly/react-core/dist/esm/components/Page/index.js";
+import { CodeBlockCode } from "@patternfly/react-core/dist/esm/components/CodeBlock/index.js";
+import { DescriptionList, DescriptionListDescription, DescriptionListGroup, DescriptionListTerm } from "@patternfly/react-core/dist/esm/components/DescriptionList/index.js";
+import { Modal } from "@patternfly/react-core/dist/esm/components/Modal/index.js";
+import { Spinner } from "@patternfly/react-core/dist/esm/components/Spinner/index.js";
+import { Switch } from "@patternfly/react-core/dist/esm/components/Switch/index.js";
+import { TextInput } from "@patternfly/react-core/dist/esm/components/TextInput/index.js";
+import { Title } from "@patternfly/react-core/dist/esm/components/Title/index.js";
+import { Tooltip, TooltipPosition } from "@patternfly/react-core/dist/esm/components/Tooltip/index.js";
 import { OutlinedQuestionCircleIcon } from "@patternfly/react-icons";
 
+import { useDialogs, DialogsContext } from "dialogs.jsx";
 import { show_modal_dialog } from "cockpit-components-dialog.jsx";
+import { ModalError } from 'cockpit-components-inline-notification.jsx';
 
 const _ = cockpit.gettext;
 
-/* kdump: dump target dialog body
- * Expected props:
- *   - onChange           callback to signal when the data has changed (key, value)
- *   - settings           kdump settings
- *   - initialTarget      initial target, e.g. "local"
- *   - compressionEnabled whether compression is enabled for all targets
- *
- * Internally, the dialog has three modes, defined by target storage:
- *   - local
- *   - nfs
- *   - ssh
- *
- */
+const KdumpSettingsModal = ({ settings, initialTarget, handleSave }) => {
+    const Dialogs = useDialogs();
+    const compressionAllowed = settings.compression?.allowed;
+    const [isSaving, setIsSaving] = useState(false);
+    const [error, setError] = useState(null);
+    const [isFormValid, setFormValid] = useState(true);
+    const [validationErrors, setValidationErrors] = useState({});
 
-class KdumpTargetBody extends React.Component {
-    constructor(props) {
-        super(props);
-        this.state = {
-            storeDest: this.props.initialTarget.type, // dialog mode, depends on location
+    const [storageLocation, setStorageLocation] = useState(Object.keys(settings.targets)[0]);
+    // common options
+    const [compressionEnabled, setCompressionEnabled] = useState(settings.compression?.enabled);
+    const [directory, setDirectory] = useState(initialTarget.path || "/var/crash");
+    // nfs and ssh
+    const [server, setServer] = useState(settings.targets.nfs?.server || settings.targets.ssh?.server);
+    // nfs
+    const [exportPath, setExportPath] = useState(settings.targets.nfs?.export || "");
+    // ssh
+    const [sshkey, setSSHKey] = useState(settings.targets.ssh?.sshkey || "");
+
+    useEffect(() => {
+        // We can't use a ref in a functional component
+        const elem = document.querySelector("#kdump-settings-form");
+        if (elem)
+            setFormValid(elem.checkValidity());
+    }, [storageLocation, directory, sshkey, server, exportPath]);
+
+    const changeStorageLocation = target => {
+        setError(null);
+        setDirectory("/var/crash");
+        setServer("");
+        setStorageLocation(target);
+    };
+
+    const changeSSHKey = value => {
+        if (value.trim() && !value.match("/.+")) {
+            setValidationErrors({ sshkey: _("SSH key isn't a path") });
+        } else {
+            setValidationErrors({});
+        }
+        setSSHKey(value);
+    };
+
+    const saveSettings = () => {
+        setError(null);
+        setIsSaving(true);
+        const newSettings = {
+            compression: {
+                allowed: compressionAllowed,
+                enabled: compressionEnabled,
+            },
+            targets: {
+                [storageLocation]: {
+                    type: storageLocation,
+                    // HACK: to not needlessly write a path /var/crash as this is the default,
+                    // set an empty string.
+                    path: directory === "/var/crash" ? "" : directory,
+                }
+            },
+            _internal: {
+                ...settings._internal
+            }
         };
-        this.changeLocation = this.changeLocation.bind(this);
-    }
 
-    changeLocation(target) {
-        // settings for the new target will be changed when the details are edited
-        this.props.onChange("target", target);
-        // depending on our chosen target, we should send the default values we show in the ui
-        this.setState({ storeDest: target });
-    }
-
-    render() {
-        let detailRows;
-        const compressionPossible = !this.props.settings || this.props.settings.compression.allowed;
-        let directory = "";
-        if (this.props.settings && "path" in this.props.settings.targets[this.state.storeDest])
-            directory = this.props.settings.targets[this.state.storeDest].path;
-
-        if (this.state.storeDest == "local") {
-            detailRows = (
-                <FormGroup fieldId="kdump-settings-local-directory" label={_("Directory")}>
-                    <TextInput id="kdump-settings-local-directory" key="directory"
-                               placeholder="/var/crash" value={directory}
-                               data-stored={directory}
-                               onChange={value => this.props.onChange("path", value)} />
-                </FormGroup>
-            );
-        } else if (this.state.storeDest == "nfs") {
-            let nfs = {};
-            if (this.props.settings && "nfs" in this.props.settings.targets)
-                nfs = this.props.settings.targets.nfs;
-            const server = nfs.server || "";
-            const exportpath = nfs.export || "";
-            detailRows = (
-                <>
-                    <FormGroup fieldId="kdump-settings-nfs-server" label={_("Server")}>
-                        <TextInput id="kdump-settings-nfs-server" key="server"
-                                placeholder="penguin.example.com" value={server}
-                                onChange={value => this.props.onChange("server", value)} />
-                    </FormGroup>
-                    <FormGroup fieldId="kdump-settings-nfs-export" label={_("Export")}>
-                        <TextInput id="kdump-settings-nfs-export" key="export"
-                                placeholder="/export/cores" value={exportpath}
-                                onChange={value => this.props.onChange("export", value)} />
-                    </FormGroup>
-                    <FormGroup fieldId="kdump-settings-nfs-directory" label={_("Directory")}>
-                        <TextInput id="kdump-settings-nfs-directory" key="directory"
-                                placeholder="/var/crash" value={directory}
-                                data-stored={directory}
-                                onChange={value => this.props.onChange("path", value)} />
-                    </FormGroup>
-                </>
-            );
-        } else if (this.state.storeDest == "ssh") {
-            let ssh = {};
-            if (this.props.settings && "ssh" in this.props.settings.targets)
-                ssh = this.props.settings.targets.ssh;
-            const server = ssh.server || "";
-            const sshkey = ssh.sshkey || "";
-            detailRows = (
-                <>
-                    <FormGroup fieldId="kdump-settings-ssh-server" label={_("Server")}>
-                        <TextInput id="kdump-settings-ssh-server" key="server"
-                                   placeholder="user@server.com" value={server}
-                                   onChange={value => this.props.onChange("server", value)} />
-                    </FormGroup>
-
-                    <FormGroup fieldId="kdump-settings-ssh-key" label={_("ssh key")}>
-                        <TextInput id="kdump-settings-ssh-key" key="ssh"
-                                   placeholder="/root/.ssh/kdump_id_rsa" value={sshkey}
-                                   onChange={value => this.props.onChange("sshkey", value)} />
-                    </FormGroup>
-
-                    <FormGroup fieldId="kdump-settings-ssh-directory" label={_("Directory")}>
-                        <TextInput id="kdump-settings-ssh-directory" key="directory"
-                                   placeholder="/var/crash" value={directory}
-                                   data-stored={directory}
-                                   onChange={value => this.props.onChange("path", value)} />
-                    </FormGroup>
-                </>
-            );
+        if (storageLocation === "ssh") {
+            newSettings.targets.ssh.server = server;
+            newSettings.targets.ssh.sshkey = sshkey;
         }
 
-        const targetDescription = {
-            local: _("Local filesystem"),
-            nfs: _("Remote over NFS"),
-            ssh: _("Remote over SSH"),
-        };
-        // we don't support all known storage options currently
-        const storageDest = this.state.storeDest;
-        return (
-            <Form isHorizontal>
+        if (storageLocation === "nfs") {
+            newSettings.targets.nfs.server = server;
+            newSettings.targets.nfs.export = exportPath;
+        }
+
+        handleSave(newSettings)
+                .then(Dialogs.close)
+                .finally(() => setIsSaving(false))
+                .catch(error => {
+                    if (error.details) {
+                        // avoid bad summary like "systemd job RestartUnit ["kdump.service","replace"] failed with result failed"
+                        // if we have a more concrete journal and trim journal's `kdump: ` prefix.
+                        error.message = _("Unable to save settings");
+                        error.details = <CodeBlockCode>{ error.details.replaceAll(/\nkdump: /g, "\n") }</CodeBlockCode>;
+                        setError(error);
+                    } else {
+                        // without a journal, show the error as-is
+                        setError(new Error(cockpit.format(_("Unable to save settings: $0"), String(error))));
+                    }
+                });
+    };
+
+    return (
+        <Modal position="top" variant="small" id="kdump-settings-dialog" isOpen
+               title={_("Crash dump location")}
+               onClose={Dialogs.close}
+               footer={
+                   <>
+                       <Button variant="primary"
+                               isLoading={isSaving}
+                               isDisabled={isSaving || !isFormValid || Object.keys(validationErrors).length !== 0}
+                               onClick={saveSettings}>
+                           {_("Save changes")}
+                       </Button>
+                       <Button variant="link"
+                               isDisabled={isSaving}
+                               className="cancel"
+                               onClick={Dialogs.close}>
+                           {_("Cancel")}
+                       </Button>
+                   </>
+               }>
+            {error && <ModalError isExpandable
+                                  dialogError={error.message || error}
+                                  dialogErrorDetail={error?.details} />}
+            <Form id="kdump-settings-form" isHorizontal>
                 <FormGroup fieldId="kdump-settings-location" label={_("Location")}>
-                    <FormSelect key="location" onChange={this.changeLocation}
-                                id="kdump-settings-location" value={storageDest}>
+                    <FormSelect key="location" onChange={changeStorageLocation}
+                                id="kdump-settings-location" value={storageLocation}>
                         <FormSelectOption value='local'
-                                          label={targetDescription.local} />
+                                          label={_("Local filesystem")} />
                         <FormSelectOption value='ssh'
-                                          label={targetDescription.ssh} />
+                                          label={_("Remote over SSH")} />
                         <FormSelectOption value='nfs'
-                                          label={targetDescription.nfs} />
+                                          label={_("Remote over NFS")} />
                     </FormSelect>
                 </FormGroup>
 
-                {detailRows}
+                {storageLocation === "local" &&
+                    <FormGroup fieldId="kdump-settings-local-directory" label={_("Directory")} isRequired>
+                        <TextInput id="kdump-settings-local-directory" key="directory"
+                                   placeholder="/var/crash" value={directory}
+                                   data-stored={directory}
+                                   onChange={setDirectory}
+                                   isRequired />
+                    </FormGroup>
+                }
+
+                {storageLocation === "nfs" &&
+                    <>
+                        <FormGroup fieldId="kdump-settings-nfs-server" label={_("Server")} isRequired>
+                            <TextInput id="kdump-settings-nfs-server" key="server"
+                                    placeholder="penguin.example.com" value={server}
+                                    onChange={setServer} isRequired />
+                        </FormGroup>
+                        <FormGroup fieldId="kdump-settings-nfs-export" label={_("Export")} isRequired>
+                            <TextInput id="kdump-settings-nfs-export" key="export"
+                                    placeholder="/export/cores" value={exportPath}
+                                    onChange={setExportPath} isRequired />
+                        </FormGroup>
+                        <FormGroup fieldId="kdump-settings-nfs-directory" label={_("Directory")} isRequired>
+                            <TextInput id="kdump-settings-nfs-directory" key="directory"
+                                    placeholder="/var/crash" value={directory}
+                                    data-stored={directory}
+                                    onChange={setDirectory}
+                                    isRequired />
+                        </FormGroup>
+                    </>
+                }
+
+                {storageLocation === "ssh" &&
+                    <>
+                        <FormGroup fieldId="kdump-settings-ssh-server" label={_("Server")} isRequired>
+                            <TextInput id="kdump-settings-ssh-server" key="server"
+                                       placeholder="user@server.com" value={server}
+                                       onChange={setServer} isRequired />
+                        </FormGroup>
+
+                        <FormGroup fieldId="kdump-settings-ssh-key" label={_("SSH key")}
+                                   helperTextInvalid={validationErrors.sshkey}
+                                   helperTextInvalidIcon={<ExclamationCircleIcon />}
+                                   validated={validationErrors.sshkey ? "error" : "default"}>
+                            <TextInput id="kdump-settings-ssh-key" key="ssh"
+                                       placeholder="/root/.ssh/kdump_id_rsa" value={sshkey}
+                                       onChange={changeSSHKey}
+                                       validated={validationErrors.sshkey ? "error" : "default"} />
+                        </FormGroup>
+
+                        <FormGroup fieldId="kdump-settings-ssh-directory" label={_("Directory")} isRequired>
+                            <TextInput id="kdump-settings-ssh-directory" key="directory"
+                                       placeholder="/var/crash" value={directory}
+                                       data-stored={directory}
+                                       onChange={setDirectory}
+                                       isRequired />
+                        </FormGroup>
+                    </>
+                }
 
                 <FormSection>
                     <FormGroup fieldId="kdump-settings-compression" label={_("Compression")} hasNoPaddingTop>
                         <Checkbox id="kdump-settings-compression"
-                                  isChecked={this.props.compressionEnabled}
-                                  onChange={value => this.props.onChange("compression", value)}
-                                  isDisabled={!compressionPossible.toString()}
+                                  isChecked={compressionEnabled}
+                                  onChange={setCompressionEnabled}
+                                  isDisabled={!compressionAllowed}
                                   label={_("Compress crash dumps to save space")} />
                     </FormGroup>
                 </FormSection>
             </Form>
-        );
-    }
-}
+        </Modal>);
+};
 
 /* Show kdump status of the system and offer options to change or test the state
  * Expected properties:
@@ -189,77 +256,16 @@ class KdumpTargetBody extends React.Component {
  * onCrashKernel     callback to crash the kernel via kdumpClient, expects a promise
  */
 export class KdumpPage extends React.Component {
+    static contextType = DialogsContext;
+
     constructor(props) {
         super(props);
-        this.state = {
-            dialogSettings: undefined,
-            dialogObj: undefined, // this is used if there's an open dialog
-        };
-        this.changeSetting = this.changeSetting.bind(this);
         this.handleTestSettingsClick = this.handleTestSettingsClick.bind(this);
-        this.dialogClosed = this.dialogClosed.bind(this);
         this.handleSettingsClick = this.handleSettingsClick.bind(this);
     }
 
-    compressionStatus(settings) {
-        return settings && settings.compression.enabled;
-    }
-
-    changeSetting(key, value) {
-        let settings = this.state.dialogSettings;
-
-        // a few special cases, otherwise write to config target directly
-        if (key == "compression") {
-            settings.compression.enabled = value;
-        } else if (key === "target") {
-            /* target changed, restore settings and wipe all settings associated
-             * with a target so no conflicting settings remain */
-            settings = {};
-            // TODO: do we need a deep copy here?
-            Object.keys(this.props.kdumpStatus.config).forEach((key) => {
-                settings[key] = { ...this.props.kdumpStatus.config[key] };
-            });
-            settings.targets = {};
-            settings.targets[value] = { type: value };
-        } else if (key !== undefined) {
-            const type = Object.keys(settings.targets)[0];
-            if (!value) {
-                if (settings.targets[type][key])
-                    delete settings.targets[type][key];
-            } else {
-                settings.targets[type][key] = value;
-            }
-        }
-        this.setState({ dialogSettings: settings });
-        this.state.dialogObj.updateDialogBody(settings);
-        this.state.dialogObj.render();
-    }
-
-    handleSaveClick() {
-        return this.props.onSaveSettings(this.state.dialogSettings)
-                .catch(error => {
-                    if (error.details) {
-                        // avoid bad summary like "systemd job RestartUnit ["kdump.service","replace"] failed with result failed"
-                        // if we have a more concrete journal
-                        error.message = _("Unable to save settings");
-                        error.details = <CodeBlockCode>{ error.details }</CodeBlockCode>;
-                    } else {
-                        // without a journal, show the error as-is
-                        error = new Error(cockpit.format(_("Unable to save settings: $0"), String(error)));
-                    }
-                    return Promise.reject(error);
-                });
-    }
-
-    handleTestSettingsClick(e) {
-        // only consider primary mouse button
-        if (!e || e.button !== 0)
-            return;
-        // don't let the click "fall through" to the dialog that we are about to open
-        e.preventDefault();
+    handleTestSettingsClick() {
         // open a dialog to confirm crashing the kernel to test the settings - then do it
-        const self = this;
-        // open the confirmation dialog
         const dialogProps = {
             title: _("Test kdump settings"),
             body: (
@@ -270,66 +276,24 @@ export class KdumpPage extends React.Component {
         const footerProps = {
             actions: [
                 {
-                    clicked: self.props.onCrashKernel.bind(self),
+                    clicked: this.props.onCrashKernel.bind(this),
                     caption: _("Crash system"),
                     style: 'danger',
                 }
             ],
-            dialog_done: self.dialogClosed,
         };
-        const dialogObj = show_modal_dialog(dialogProps, footerProps);
-        this.setState({ dialogObj: dialogObj });
+        show_modal_dialog(dialogProps, footerProps);
     }
 
-    handleServiceDetailsClick(e) {
-        // only consider primary mouse button
-        if (!e || e.button !== 0)
-            return;
+    handleServiceDetailsClick() {
         cockpit.jump("/system/services#/kdump.service", cockpit.transport.host);
     }
 
-    dialogClosed() {
-        this.setState({ dialogSettings: undefined, dialogObj: undefined });
-    }
-
-    handleSettingsClick(e) {
-        // only consider primary mouse button
-        if (!e || e.button !== 0)
-            return;
-        e.preventDefault();
-        const self = this;
-        const settings = { };
-        Object.keys(self.props.kdumpStatus.config).forEach((key) => {
-            settings[key] = { ...self.props.kdumpStatus.config[key] };
-        });
-        // open the settings dialog
-        const dialogProps = {
-            title: _("Crash dump location"),
-            id: "kdump-settings-dialog"
-        };
-        const updateDialogBody = function(newSettings) {
-            dialogProps.body = React.createElement(KdumpTargetBody, {
-                settings: newSettings || settings,
-                onChange: self.changeSetting,
-                initialTarget: self.props.kdumpStatus.target,
-                compressionEnabled: self.compressionStatus(newSettings || settings)
-            });
-        };
-        updateDialogBody();
-        // also test modifying properties in subsequent render calls
-        const footerProps = {
-            actions: [
-                {
-                    clicked: this.handleSaveClick.bind(this),
-                    caption: _("Save"),
-                    style: 'primary',
-                },
-            ],
-            dialog_done: this.dialogClosed.bind(this),
-        };
-        const dialogObj = show_modal_dialog(dialogProps, footerProps);
-        dialogObj.updateDialogBody = updateDialogBody;
-        this.setState({ dialogSettings: settings, dialogObj });
+    handleSettingsClick() {
+        const Dialogs = this.context;
+        Dialogs.show(<KdumpSettingsModal settings={this.props.kdumpStatus.config}
+                                         initialTarget={this.props.kdumpStatus.target}
+                                         handleSave={this.props.onSaveSettings} />);
     }
 
     render() {
@@ -484,6 +448,9 @@ export class KdumpPage extends React.Component {
                             {_("Kernel crash dump")}
                         </Title>
                         {kdumpSwitch}
+                        <HelperText>
+                            <HelperTextItem variant="indeterminate">{serviceRunning ? _("Enabled") : _("Disabled")}</HelperTextItem>
+                        </HelperText>
                     </Flex>
                 </PageSection>
                 <PageSection>

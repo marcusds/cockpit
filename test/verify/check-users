@@ -18,9 +18,100 @@
 # along with Cockpit; If not, see <http://www.gnu.org/licenses/>.
 
 import datetime
+import os
 
 import parent  # noqa: F401
-from testlib import MachineCase, nondestructive, skipDistroPackage, skipImage, test_main, wait
+from testlib import MachineCase, nondestructive, skipDistroPackage, skipOstree, test_main, wait
+
+
+good_password = "tqymuVh.ZfZnP§9Wr=LM3JyG5yx"
+
+
+useradd_defaults = {}
+
+
+def getUserAddDetails(machine):
+    global useradd_defaults
+
+    if not useradd_defaults:  # dictionary is empty
+        useradd_defaults_str = machine.execute("useradd -D")
+        lines = useradd_defaults_str.split("\n")
+
+        for line in lines:
+            if line:
+                key, value = line.split("=")
+                useradd_defaults[key] = value
+
+    return useradd_defaults
+
+
+def performUserAction(browser, user, action):
+    browser.wait_visible(f"#accounts-list tbody tr:contains({user}) .pf-c-dropdown button")
+    browser.click(f"#accounts-list tbody tr:contains({user}) .pf-c-dropdown button")
+    browser.wait_visible(f"#accounts-list tbody tr:contains({user}) .pf-c-dropdown button[aria-expanded=true]")
+    browser.click(f".pf-c-dropdown__menu-item:contains({action})")
+
+
+def createUser(
+    browser,
+    machine,
+    user_name,
+    real_name,
+    locked,
+    force_password_change,
+    password=None,
+    custom_home_dir=None,
+    default_shell=None,
+    custom_shell=None,
+    uid=None,
+    expected_uid=None,
+    verify_created=True,
+    run_assert_pixels=False,
+):
+    if default_shell is None:
+        default_shell = getUserAddDetails(machine)["SHELL"]
+    browser.wait_visible('#accounts-create')
+    browser.click('#accounts-create')
+    browser.wait_visible('#accounts-create-dialog')
+    if run_assert_pixels:
+        browser.assert_pixels("#accounts-create-dialog", "accounts-create-dialog")
+
+    browser.set_input_text('#accounts-create-user-name', user_name)
+    browser.set_input_text('#accounts-create-real-name', real_name)
+    if password:
+        browser.set_input_text('#accounts-create-password-pw1', password)
+        browser.set_input_text('#accounts-create-password-pw2', password)
+
+    if locked:
+        browser.click('#accounts-create-locked')
+        browser.wait_visible('#accounts-create-locked:checked')
+    else:
+        browser.wait_visible('#account-use-password:checked')
+        browser.set_checked('#accounts-create-force-password-change', force_password_change)
+        browser.wait_visible('#accounts-create-locked:not(:checked)')
+
+    if expected_uid is not None:
+        browser.wait_visible(f'#accounts-create-user-uid[value="{expected_uid}"]')
+    if uid is not None:
+        browser.set_input_text('#accounts-create-user-uid', uid)
+    if custom_home_dir is not None:
+        browser.set_input_text('#accounts-create-user-home-dir', custom_home_dir)
+    else:
+        default_home_dir = getUserAddDetails(machine)["HOME"]
+        expected_home_dir = default_home_dir + "/" + user_name
+        browser.wait_visible(f"#accounts-create-user-home-dir[value='{expected_home_dir}']")
+
+    if custom_shell:
+        browser.click("#accounts-create-user-shell")
+        browser.click(f"li button[label='{custom_shell}']")
+    else:
+        browser.wait_in_text('#accounts-create-user-shell', default_shell)
+
+    browser.click('#accounts-create-dialog button.apply')
+
+    if verify_created:
+        browser.wait_not_present('#accounts-create-dialog')
+        browser.wait_in_text('#accounts-list', real_name)
 
 
 @nondestructive
@@ -59,6 +150,8 @@ class TestAccounts(MachineCase):
         b.set_input_text('#account-real-name', "Anton Arbitrary")
         b.wait_visible('#account-real-name:not([disabled])')
         b.wait_text("#account-title", "Anton Arbitrary")
+        b.wait_text("#account-home-dir", os.path.join(getUserAddDetails(m)["HOME"] + "/anton"))
+        b.wait_text("#account-shell", getUserAddDetails(m)["SHELL"])
         self.assertIn(":Anton Arbitrary:", m.execute("grep anton /etc/passwd"))
 
         # Add some other GECOS fields
@@ -72,7 +165,6 @@ class TestAccounts(MachineCase):
         b.wait_text('#accounts-list td[data-label="Full name"]:contains("Anton")', "Anton Arbitrary")
         b.go("/users/#anton")
 
-        good_password = "tqymuVh.ZfZnP§9Wr=LM3JyG5yx"
         # Delete it
         b.click('#account-delete')
         b.wait_visible('#account-confirm-delete-dialog')
@@ -100,6 +192,9 @@ class TestAccounts(MachineCase):
         b.wait_visible("#account-real-name[disabled]")
         b.wait_visible("#account-logout[disabled]")
         b.wait_visible("#account-locked:not(:checked)")
+        # check home directory and shell for root
+        b.wait_text("#account-home-dir", "/root")
+        b.wait_text("#account-shell", "/bin/bash")
         # root account should not be locked by default on our images
         self.assertIn(m.execute("passwd -S root").split()[1], ["P", "PS"])
         # now lock account
@@ -114,7 +209,7 @@ class TestAccounts(MachineCase):
         self.sed_file('s@^SHELL=.*$@SHELL=/bin/true@', '/etc/default/useradd')
         b.click('#accounts-create')
         b.wait_visible('#accounts-create-dialog')
-        b.set_input_text('#accounts-create-user-name', "berta")
+        b.set_input_text('#accounts-create-user-name', "Berta")
         b.set_input_text('#accounts-create-real-name', "Berta Bestimmt")
         b.set_input_text('#accounts-create-password-pw1', "foo")
         b.wait_visible("#accounts-create-password-meter.danger")
@@ -132,58 +227,259 @@ class TestAccounts(MachineCase):
         b.set_input_text('#accounts-create-password-pw1', long_password)
         b.set_input_text('#accounts-create-password-pw2', long_password)
         b.click('#accounts-create-dialog button.apply')
-        b.wait_in_text("#accounts-create-dialog .pf-c-form__helper-text.pf-m-error", "Password is longer than 256 characters")
+        b.wait_in_text("#accounts-create-dialog .pf-c-form__helper-text .pf-m-warning", "Password is longer than 256 characters")
         b.wait_not_present('#accounts-create-dialog button.pf-m-warning')
 
         # changing input clears the error message
         b.set_input_text('#accounts-create-password-pw1', "test")
-        b.wait_not_present("#accounts-create-dialog .pf-c-form__helper-text.pf-m-error")
+        b.set_input_text('#accounts-create-password-pw2', "test")
+        b.wait_not_present("#accounts-create-dialog .pf-c-form__helper-text .pf-m-warning")
 
         # correct password confirmation
         b.set_input_text('#accounts-create-password-pw1', good_password)
         b.set_input_text('#accounts-create-password-pw2', good_password)
         b.click('#accounts-create-dialog button.apply')
-        b.wait_not_present("#accounts-create-dialog .pf-c-form__helper-text.pf-m-error")
+        b.wait_not_present("#accounts-create-dialog .pf-c-form__helper-text .pf-m-warning")
         b.wait_not_present('#accounts-create-dialog')
         b.wait_in_text('#accounts-list', "Berta Bestimmt")
 
         # Check home directory
-        home_dir = m.execute("getent passwd berta | cut -f6 -d:").strip()
-        self.assertTrue(home_dir.endswith("/berta"))
-        self.assertEqual(m.execute(f"stat -c '%U' {home_dir}").strip(), "berta")
+        home_dir = m.execute("getent passwd Berta | cut -f6 -d:").strip()
+        self.assertTrue(home_dir.endswith("/Berta"))
+        self.assertEqual(m.execute(f"stat -c '%U' {home_dir}").strip(), "Berta")
 
         # Check that we set up shell configured in /etc/default/useradd
-        shell = m.execute("getent passwd berta | cut -f7 -d:").strip()
+        shell = m.execute("getent passwd Berta | cut -f7 -d:").strip()
         self.assertEqual(shell, '/bin/true')
 
         # Delete it externally
-        m.execute("userdel berta")
+        m.execute("userdel Berta")
         b.wait_not_in_text('#accounts-list', "Berta Bestimmt")
 
+        b.logout()
+        b.login_and_go("/users")
+        createUser(
+            browser=b,
+            machine=m,
+            user_name="robert",
+            real_name="Robert Robertson",
+            password=good_password,
+            locked=False,
+            force_password_change=True,
+            default_shell="/bin/true",
+            run_assert_pixels=True
+        )
+
+        # Test actions in kebab menu
+        # disable password
+        performUserAction(b, 'robert', 'Lock account')
+        b.click("#account-confirm-lock-dialog footer .pf-m-danger.apply")
+        # lock option is now disabled
+        b.click("#accounts-list tbody tr:contains(robert) .pf-c-dropdown button")
+        b.wait_in_text(".pf-c-dropdown__menu li:contains('Lock account') .pf-m-disabled", 'Lock account')
+        b.click("#accounts-list tbody tr:contains(robert) .pf-c-dropdown button")
+        # change is visible on details page
+        performUserAction(b, 'robert', 'Edit user')
+        b.wait_in_text('#account-title', 'Robert Robertson')
+        b.wait_visible('#account-locked:checked')
+        b.click("#account-locked")
+        b.go("/users")
+
+        # In fedora-core userdel for this user consistently fails
+        # userdel: user robert is currently used by process *
+        if not m.ostree_image:
+            performUserAction(b, 'robert', 'Delete account')
+            b.click("#account-confirm-delete-dialog footer button.pf-m-danger.apply")
+            b.wait_not_in_text('#accounts-list', "Robert Robertson")
+
+        self.allow_journal_messages("Password quality check failed:")
+        self.allow_journal_messages("The password is a palindrome")
+        self.allow_journal_messages("passwd: user.*does not exist")
+        self.allow_journal_messages("passwd: Unknown user name '.*'.")
+        self.allow_journal_messages("lastlog: Unknown user or range: anton")
+        # when sed'ing, there is a short time when the config file does not exist
+        self.allow_journal_messages(".*libuser initialization error: .*/etc/default/useradd.*: No such file or directory")
+
+    def testFilterAndSort(self):
+        b = self.browser
+        m = self.machine
+
+        self.login_and_go("/users")
+
+        createUser(
+            browser=b,
+            machine=m,
+            user_name="robert",
+            real_name="Robert Robertson",
+            password=good_password,
+            locked=False,
+            force_password_change=True,
+        )
+
+        # Check Robert's groups
+        b.wait_not_present("#accounts-list tbody tr:contains(robert) td[data-label='Group'] .pf-c-label:contains(users)")
+        if not m.ostree_image:  # Users group does not exist in coreos image
+            m.execute("/usr/bin/gpasswd -a robert users")
+            b.wait_in_text("#accounts-list tbody tr:contains(robert) td[data-label='Group'] .pf-c-label.pf-m-cyan:contains(users)", "users")
+        m.execute(f"/usr/bin/gpasswd -a robert {m.get_admin_group()}")
+        b.wait_in_text("#accounts-list tbody tr:contains(robert) td[data-label='Group'] .pf-c-label.pf-m-gold", m.get_admin_group())
+        m.execute(f"/usr/bin/gpasswd -d robert {m.get_admin_group()}")
+        b.wait_not_present("#accounts-list tbody tr:contains(robert) td[data-label='Group'] .pf-c-label.pf-m-gold")
+
+        # test filters
+        b.set_input_text("#accounts-filter input", "root")
+        b.wait_in_text("#accounts-list tbody tr:first-child td[data-label='Username']", "root")
+        b.set_input_text("#accounts-filter input", "rOBeRt")
+        b.wait_in_text("#accounts-list tbody tr:first-child td[data-label='Username']", "robert")
+
+        uid = "1000"
+        if "debian" in m.image or "ubuntu" in m.image:
+            uid = "1001"
+        b.set_input_text("#accounts-filter input", uid)
+        b.wait_in_text("#accounts-list tbody tr:first-child td[data-label='ID']", uid)
+        b.set_input_text("#accounts-filter input", "spooky")
+        b.wait_visible("#accounts div.pf-c-empty-state")
+
+        b.inject_js("""
+                    function getTextColumn(query_selector) {
+                        const values = [];
+                        document.querySelectorAll(query_selector).forEach(node => values.push(node.innerText));
+                        return values;
+                    }""")
+
+        def check_column_sort(query_selector, invert=False):
+            # current account is always in the first row
+            b.wait_in_text("#accounts-list tbody tr:first-child td[data-label='Username']", "admin")
+            values = b.eval_js(f"getTextColumn(\"{query_selector}\")")
+            for i in range(2, len(values)):
+                if values[i].isnumeric():
+                    value_current = int(values[i])
+                    value_prev = int(values[i - 1])
+                else:
+                    value_current = values[i].lower()
+                    value_prev = values[i - 1].lower()
+
+                if (invert):
+                    b.wait(lambda: value_prev > value_current)
+                else:
+                    b.wait(lambda: value_prev < value_current)
+
+        # robert should be in users group
+        if not m.ostree_image:  # Users group does not exist in coreos image
+            b.set_input_text("#accounts-filter input", "users")
+            names = b.eval_js("getTextColumn(\"[data-label='Username'] a\")")
+            b.wait(lambda: "robert" in names)
+
+        # clear text filters
+        b.click("#accounts-filter button[aria-label='Reset']")
+
+        # check alphabetical order of Username
+        check_column_sort("[data-label='Username'] a")
+        b.wait_visible("#accounts-list > thead > tr > th:nth-child(1) > button")
+        b.click("#accounts-list > thead > tr > th:nth-child(1) > button")
+        check_column_sort("[data-label='Username'] a", invert=True)
+
+        # sort by full name
+        b.click("#accounts-list > thead > tr > th:nth-child(2) > button")
+        check_column_sort("[data-label='Full name']")
+        b.click("#accounts-list > thead > tr > th:nth-child(2) > button")
+        check_column_sort("[data-label='Full name']", invert=True)
+
+        # sort by ID
+        b.click("#accounts-list > thead > tr > th:nth-child(3) > button")
+        check_column_sort("[data-label='ID']", invert=True)
+        b.click("#accounts-list > thead > tr > th:nth-child(3) > button")
+        check_column_sort("[data-label='ID']")
+
+    def testUserPasswords(self):
+        b = self.browser
+        m = self.machine
+
+        self.login_and_go("/users")
         # Create a locked user with weak password
-        m.execute("sed -i 's/^SHELL=.*$/SHELL=/' /etc/default/useradd")
-        b.click('#accounts-create')
-        b.wait_visible('#accounts-create-dialog')
-        b.set_input_text('#accounts-create-user-name', "jussi")
-        b.set_input_text('#accounts-create-real-name', "Jussi Junior")
-        b.set_input_text('#accounts-create-password-pw1', "foo")
-        b.set_input_text('#accounts-create-password-pw2', "foo")
-        b.set_checked('#accounts-create-locked', True)
-        b.wait_visible('#account-use-password:not(:checked)')
-        b.wait_visible('#accounts-create-force-password-change:not(:checked)')
+        self.sed_file('s/^SHELL=.*$/SHELL=/', '/etc/default/useradd')
+        self.allow_journal_messages(".*required to change your password immediately.*")
+        self.allow_journal_messages(".*user account or password has expired.*")
+
+        createUser(
+            browser=b,
+            machine=m,
+            user_name="js",
+            real_name="Jussi Senior",
+            locked=True,
+            force_password_change=False,
+            verify_created=False,
+        )
+
+        # Check Confirm password is not validated until it's at least the same length as the first password
+        # Once they are the same length, it should valitate the Confirm password after each keystroke
+        b.set_input_text('#accounts-create-password-pw1', "foobar")
+        b.set_input_text('#accounts-create-password-pw2', "bar")
+        b.wait_not_present("#accounts-create-password-pw2-helper")
+        b.set_input_text('#accounts-create-password-pw2', "foobarfoo")
+        b.wait_visible("#accounts-create-password-pw2-helper")
+        b.wait_in_text("#accounts-create-password-pw2-helper", "The passwords do not match")
+        b.set_input_text('#accounts-create-password-pw2', "bar")
+        b.wait_visible("#accounts-create-password-pw2-helper")
+        b.wait_in_text("#accounts-create-password-pw2-helper", "The passwords do not match")
+        b.set_input_text('#accounts-create-password-pw2', "foobar")
+        b.wait_not_present("#accounts-create-password-pw2-helper")
+
+        b.click('#accounts-create-dialog button.cancel')
+        b.wait_not_present('#account-set-password-dialog')
+
+        createUser(
+            browser=b,
+            machine=m,
+            user_name="js",
+            real_name="Jussi Senior",
+            locked=True,
+            force_password_change=False,
+            verify_created=False,
+        )
+
+        # Check Confirm password is not validated until the form is submitted
+        # Once it is submitted, it should valitate the Confirm password after each keystroke
+        b.set_input_text('#accounts-create-password-pw1', "foobar")
+        b.set_input_text('#accounts-create-password-pw2', "bar")
+        b.wait_not_present("#accounts-create-password-pw2-helper")
         b.click('#accounts-create-dialog button.apply')
+        b.wait_visible("#accounts-create-password-pw2-helper")
+        b.wait_in_text("#accounts-create-password-pw2-helper", "The passwords do not match")
+        b.set_input_text('#accounts-create-password-pw2', "barfoo")
+        b.wait_visible("#accounts-create-password-pw2-helper")
+        b.wait_in_text("#accounts-create-password-pw2-helper", "The passwords do not match")
+        b.set_input_text('#accounts-create-password-pw2', "foobarfoo")
+        b.wait_visible("#accounts-create-password-pw2-helper")
+        b.wait_in_text("#accounts-create-password-pw2-helper", "The passwords do not match")
+        b.set_input_text('#accounts-create-password-pw2', "foobar")
+        b.wait_not_present("#accounts-create-password-pw2-helper")
+
+        b.click('#accounts-create-dialog button.cancel')
+        b.wait_not_present('#account-set-password-dialog')
+
+        createUser(
+            browser=b,
+            machine=m,
+            user_name="jussi",
+            real_name="Jussi Junior",
+            password="foo",
+            locked=True,
+            force_password_change=False,
+            verify_created=False,
+        )
 
         # Password is weak, lets change it to another weak - this should still not accept
-        b.wait_in_text("#accounts-create-dialog .pf-c-form__helper-text.pf-m-error", "Password quality check failed:")
+        b.wait_in_text("#accounts-create-dialog .pf-c-form__helper-text .pf-m-warning", "Password quality check failed:")
         b.wait_visible('#accounts-create-dialog button.pf-m-warning')
         b.set_input_text('#accounts-create-password-pw1', "bar")
         b.set_input_text('#accounts-create-password-pw2', "bar")
-        b.wait_not_present("#accounts-create-dialog .pf-c-form__helper-text.pf-m-error")
+        b.wait_not_present("#accounts-create-dialog .pf-c-form__helper-text .pf-m-warning")
         b.wait_not_present('#accounts-create-dialog button.pf-m-warning')
         b.click('#accounts-create-dialog button.apply')
 
         # Password is weak, confirm button should be disabled after first click
-        b.wait_in_text("#accounts-create-dialog .pf-c-form__helper-text.pf-m-error", "Password quality check failed:")
+        b.wait_in_text("#accounts-create-dialog .pf-c-form__helper-text .pf-m-warning", "Password quality check failed:")
         b.wait_visible("button.apply:disabled")
 
         # Lets confirm the weak password now
@@ -238,7 +534,7 @@ class TestAccounts(MachineCase):
         b.click(f".pf-c-label-group__list .pf-c-label__content:contains({m.get_admin_group()}) + button[aria-label='Close {m.get_admin_group()}']")
         b.wait(lambda: not is_admin())
         b.wait_not_present(admin_role_sel + f" .pf-c-label:contains({m.get_admin_group()})")
-        if m.image not in ["fedora-coreos", "rhel4edge"]:  # User is not shown as logged in when logged in through Cockpit
+        if not m.ostree_image:  # User is not shown as logged in when logged in through Cockpit
             b.wait_visible("#account-groups-helper")
         m.execute(f"/usr/bin/gpasswd -a jussi {m.get_admin_group()}")
         with b.wait_timeout(20):
@@ -265,7 +561,7 @@ class TestAccounts(MachineCase):
         b.set_input_text("#account-set-password-pw2", 'a')
         b.wait_visible("#account-set-password-meter.danger")
         b.click('#account-set-password-dialog button.apply')
-        b.wait_in_text("#account-set-password-dialog .pf-c-form__helper-text.pf-m-error", "Password quality check failed:")
+        b.wait_in_text("#account-set-password-dialog .pf-c-form__helper-text .pf-m-warning", "Password quality check failed:")
         b.wait_visible('#account-set-password-dialog button.pf-m-warning')
 
         # password mismatch
@@ -279,9 +575,9 @@ class TestAccounts(MachineCase):
         long_password = "2a02-x!h4a" * 30
         b.set_input_text('#account-set-password-pw1', long_password)
         b.set_input_text('#account-set-password-pw2', long_password)
-        b.wait_not_present("#account-set-password-dialog .pf-c-form__helper-text.pf-m-error")
+        b.wait_not_present("#account-set-password-dialog .pf-c-form__helper-text .pf-m-warning")
         b.click('#account-set-password-dialog button.apply')
-        b.wait_in_text("#account-set-password-dialog .pf-c-form__helper-text.pf-m-error", "Password is longer than 256 characters")
+        b.wait_in_text("#account-set-password-dialog .pf-c-form__helper-text .pf-m-warning", "Password is longer than 256 characters")
         b.wait_not_present('#account-set-password-dialog button.pf-m-warning')
 
         good_password_2 = "cEwghLY§X9R&m8RLwk4Xfed9Bw="
@@ -289,7 +585,7 @@ class TestAccounts(MachineCase):
         b.set_input_text("#account-set-password-pw1", good_password_2)
         b.set_input_text("#account-set-password-pw2", good_password_2)
         b.wait_visible("#account-set-password-meter.success")
-        b.wait_not_present("#account-set-password-dialog .pf-c-form__helper-text.pf-m-error")
+        b.wait_not_present("#account-set-password-dialog .pf-c-form__helper-text .pf-m-warning")
         b.click('#account-set-password-dialog button.apply')
         b.wait_not_present('#account-set-password-dialog')
 
@@ -305,7 +601,7 @@ class TestAccounts(MachineCase):
         b.click('#accounts-list td[data-label="Username"] a[href="#/damaged"]')
         b.wait_in_text("#account-title", "Damaged")
 
-        if m.image not in ["fedora-coreos", "rhel4edge"]:  # User is not shown as logged in when logged in through Cockpit
+        if not m.ostree_image:  # User is not shown as logged in when logged in through Cockpit
             b.go("#/admin")
             b.wait_visible("#account-logout[disabled]")
 
@@ -333,23 +629,20 @@ class TestAccounts(MachineCase):
 
         # Create an account and force password change on first login
         b.go('/users')
-        b.click('#accounts-create')
-        b.wait_visible('#accounts-create-dialog')
-        b.set_input_text('#accounts-create-user-name', "robert")
-        b.set_input_text('#accounts-create-real-name', "Robert Robertson")
-        b.set_input_text('#accounts-create-password-pw1', good_password)
-        b.set_input_text('#accounts-create-password-pw2', good_password)
-        b.set_checked('#accounts-create-force-password-change', True)
-        b.wait_visible('#accounts-create-locked:not(:checked)')
-        b.click('#accounts-create-dialog button.apply')
-
-        b.wait_not_present('#accounts-create-dialog')
-        b.wait_in_text('#accounts-list', "Robert Robertson")
+        createUser(
+            browser=b,
+            machine=m,
+            user_name="robert",
+            real_name="Robert Robertson",
+            password=good_password,
+            locked=False,
+            force_password_change=True,
+        )
         # Login as robert and check if password change is required
         b.logout()
 
         # login in second window to check if last login is updated in accounts list
-        if m.image not in ["fedora-coreos", "rhel4edge"]:  # User is not shown as logged in when logged in through Cockpit
+        if not m.ostree_image:  # User is not shown as logged in when logged in through Cockpit
             b2.login_and_go("/users")
             b2.wait_in_text("#accounts-list tbody tr:contains(robert) td[data-label='Last active']", "Never logged in")
 
@@ -377,126 +670,213 @@ class TestAccounts(MachineCase):
         b.click('#login-button')
         b.wait_visible('#content')
 
-        def performUserAction(browser, user, action):
-            browser.click(f"#accounts-list tbody tr:contains({user}) .pf-c-dropdown button")
-            browser.click(f"#accounts-list tbody tr:contains({user}) .pf-c-dropdown__menu li:contains({action})")
+    def testCustomUID(self):
+        b = self.browser
+        m = self.machine
 
-        if m.image not in ["fedora-coreos", "rhel4edge"]:
-            b2.wait_in_text("#accounts-list tbody tr:contains(robert) td[data-label='Last active']", "Logged in")
-            performUserAction(b2, 'robert', 'Log user out')
-            b2.click("#account-confirm-logout-dialog footer .pf-c-button.apply")
+        self.login_and_go("/users")
 
-            (year, month) = m.execute("date +'%Y %b'").strip().split()
-            b2.wait_in_text("#accounts-list tbody tr:contains(robert) td[data-label='Last active']", year)
-            b2.wait_in_text("#accounts-list tbody tr:contains(robert) td[data-label='Last active']", month)
+        # Test custom UID
+        createUser(
+            browser=b,
+            machine=m,
+            user_name="bob",
+            real_name="Bob Bobson",
+            password=good_password,
+            locked=False,
+            force_password_change=False,
+            uid="1500",
+            verify_created=True,
+        )
+        b.wait_visible("#accounts-list td[data-label='Username']:contains('bob') + td + td:contains('1500')")
 
-        b.logout()
-        b.login_and_go("/users")
-        # Test actions in kebab menu
-        # disable password
-        performUserAction(b, 'robert', 'Lock account')
-        b.click("#account-confirm-lock-dialog footer .pf-m-danger.apply")
-        # lock option is now disabled
-        b.click("#accounts-list tbody tr:contains(robert) .pf-c-dropdown button")
-        b.wait_in_text("#accounts-list tbody tr:contains(robert) .pf-c-dropdown__menu li:contains('Lock account') .pf-m-disabled", 'Lock account')
-        b.click("#accounts-list tbody tr:contains(robert) .pf-c-dropdown button")
-        # change is visible on details page
-        performUserAction(b, 'robert', 'Edit user')
-        b.wait_in_text('#account-title', 'Robert Robertson')
-        b.wait_visible('#account-locked:checked')
-        b.click("#account-locked")
-        b.go('/users')
+        # Test dialog predicts corrent next available UID
+        createUser(
+            browser=b,
+            machine=m,
+            user_name="john",
+            real_name="John Johnson",
+            password=good_password,
+            locked=False,
+            force_password_change=False,
+            expected_uid="1501",
+            verify_created=True,
+        )
+        b.wait_visible("#accounts-list td[data-label='Username']:contains(john) + td + td:contains(1501)")
 
-        # Check Robert's groups
-        b.wait_not_present("#accounts-list tbody tr:contains(robert) td[data-label='Group'] .pf-c-label:contains(users)")
-        if m.image not in ["fedora-coreos", "rhel4edge"]:  # Users group does not exist in coreos image
-            m.execute("/usr/bin/gpasswd -a robert users")
-            b.wait_in_text("#accounts-list tbody tr:contains(robert) td[data-label='Group'] .pf-c-label.pf-m-cyan:contains(users)", "users")
-        m.execute(f"/usr/bin/gpasswd -a robert {m.get_admin_group()}")
-        b.wait_in_text("#accounts-list tbody tr:contains(robert) td[data-label='Group'] .pf-c-label.pf-m-gold", m.get_admin_group())
-        m.execute(f"/usr/bin/gpasswd -d robert {m.get_admin_group()}")
-        b.wait_not_present("#accounts-list tbody tr:contains(robert) td[data-label='Group'] .pf-c-label.pf-m-gold")
+        # Test creation of users with the same UID
+        createUser(
+            browser=b,
+            machine=m,
+            user_name="jack",
+            real_name="Jack Jackson",
+            password=good_password,
+            locked=False,
+            force_password_change=False,
+            uid="1501",
+            verify_created=False,
+        )
+        b.wait_visible("#accounts-create-dialog")
+        b.wait_in_text("#accounts-create-user-uid-helper", "already used")
+        b.wait_visible("button.apply:disabled")
+        b.click("button:contains('Create account with non-unique UID')")
+        b.wait_not_present("#accounts-create-dialog")
+        b.wait_in_text("#accounts-list", "Jack Jackson")
+        b.wait_visible("#accounts-list td[data-label='Username']:contains(jack) + td + td:contains(1501)")
+        b.wait_visible("#accounts-list td[data-label='Username']:contains(john) + td + td:contains(1501)")
 
-        # test filters
-        b.set_input_text("#accounts-filter input", "rOBeRt")
-        b.wait_in_text("#accounts-list tbody tr:first-child td[data-label='Username']", "robert")
-        b.set_input_text("#accounts-filter input", "root")
-        b.wait_in_text("#accounts-list tbody tr:first-child td[data-label='Username']", "root")
+        # No UID specified -> useradd chooses UID for us
+        createUser(
+            browser=b,
+            machine=m,
+            user_name="nouidspecified",
+            real_name="NoUID Specified",
+            password=good_password,
+            locked=False,
+            force_password_change=False,
+            uid="",
+            verify_created=True,
+        )
 
-        uid = "1000"
-        if "debian" in m.image or "ubuntu" in m.image:
-            uid = "1001"
-        b.set_input_text("#accounts-filter input", uid)
-        b.wait_in_text("#accounts-list tbody tr:first-child td[data-label='ID']", uid)
-        b.set_input_text("#accounts-filter input", "spooky")
-        b.wait_visible("#accounts div.pf-c-empty-state")
+        # UID cannot be lower than UID_MIN
+        createUser(
+            browser=b,
+            machine=m,
+            user_name="failedfailson",
+            real_name="Failed Failson",
+            password=good_password,
+            locked=False,
+            force_password_change=False,
+            uid="1",
+            verify_created=False,
+        )
+        b.wait_visible("#accounts-create-dialog")
+        b.wait_in_text("#accounts-create-user-uid-helper", "lower than")
+        b.click("#accounts-create-dialog button.cancel")
+        b.wait_not_present("#accounts-create-dialog")
 
-        b.inject_js("""
-                    function getTextColumn(query_selector) {
-                        const values = [];
-                        document.querySelectorAll(query_selector).forEach(node => values.push(node.innerText));
-                        return values;
-                    }""")
+        # UID cannot be higher than UID_MAX
+        createUser(
+            browser=b,
+            machine=m,
+            user_name="failedfailson",
+            real_name="Failed Failson",
+            password=good_password,
+            locked=False,
+            force_password_change=False,
+            uid="9999999",
+            verify_created=False,
+        )
+        b.wait_visible("#accounts-create-dialog")
+        b.wait_in_text("#accounts-create-user-uid-helper", "higher than")
+        b.click("#accounts-create-dialog button.cancel")
+        b.wait_not_present("#accounts-create-dialog")
 
-        def check_column_sort(query_selector, invert=False):
-            # current account is always in the first row
-            b.wait_in_text("#accounts-list tbody tr:first-child td[data-label='Username']", "admin")
-            values = b.eval_js(f"getTextColumn(\"{query_selector}\")")
-            for i in range(2, len(values)):
-                if values[i].isnumeric():
-                    value_current = int(values[i])
-                    value_prev = int(values[i - 1])
-                else:
-                    value_current = values[i].lower()
-                    value_prev = values[i - 1].lower()
+        # UID must be a positive integer
+        createUser(
+            browser=b,
+            machine=m,
+            user_name="failedfailson",
+            real_name="Failed Failson",
+            password=good_password,
+            locked=False,
+            force_password_change=False,
+            uid="abc",
+            verify_created=False,
+        )
+        b.wait_visible("#accounts-create-dialog")
+        b.wait_in_text("#accounts-create-user-uid-helper", "positive integer")
+        b.click("#accounts-create-dialog button.cancel")
+        b.wait_not_present("#accounts-create-dialog")
 
-                if (invert):
-                    b.wait(lambda: value_prev > value_current)
-                else:
-                    b.wait(lambda: value_prev < value_current)
+    def testCustomUserProperties(self):
+        b = self.browser
+        m = self.machine
 
-        # robert should be in users group
-        if m.image not in ["fedora-coreos", "rhel4edge"]:  # Users group does not exist in coreos image
-            b.set_input_text("#accounts-filter input", "users")
-            names = b.eval_js("getTextColumn(\"[data-label='Username'] a\")")
-            b.wait(lambda: "robert" in names)
+        self.login_and_go("/users")
 
-        # clear text filters
-        b.click("#accounts-filter button[aria-label='Reset']")
+        # Test custom home directory
+        custom_dir_path = "/home/mycustomdir"
+        createUser(
+            browser=b,
+            machine=m,
+            user_name="jussi",
+            real_name="Jussi Junior",
+            password=good_password,
+            locked=False,
+            custom_home_dir=custom_dir_path,
+            force_password_change=False,
+            verify_created=True,
+        )
 
-        # check alphabetical order of Username
-        check_column_sort("[data-label='Username'] a")
-        b.click("#accounts-list > thead > tr > th:nth-child(1) > button")
-        check_column_sort("[data-label='Username'] a", invert=True)
+        b.go("#/jussi")
+        b.wait_text("#account-home-dir", custom_dir_path)
+        m.execute(f"test -d {custom_dir_path}")
+        m.execute("! test -d /home/jussi")
 
-        # sort by full name
-        b.click("#accounts-list > thead > tr > th:nth-child(2) > button")
-        check_column_sort("[data-label='Full name']")
-        b.click("#accounts-list > thead > tr > th:nth-child(2) > button")
-        check_column_sort("[data-label='Full name']", invert=True)
+        b.go("/users")
+        # Check assigning a file as home directory fails
+        m.execute("touch /home/isfile")
+        createUser(
+            browser=b,
+            machine=m,
+            user_name="file",
+            real_name="File Filerson",
+            password=good_password,
+            locked=False,
+            custom_home_dir="/home/isfile",
+            force_password_change=False,
+            verify_created=False,
+        )
+        b.wait_visible("#accounts-create-dialog")
+        b.wait_in_text("#accounts-create-user-home-dir-helper", "existing file")
+        b.wait_visible("button.apply:disabled")
+        b.click("button.cancel")
+        b.wait_not_present("#accounts-create-dialog")
 
-        # sort by ID
-        b.click("#accounts-list > thead > tr > th:nth-child(3) > button")
-        check_column_sort("[data-label='ID']", invert=True)
-        b.click("#accounts-list > thead > tr > th:nth-child(3) > button")
-        check_column_sort("[data-label='ID']")
+        b.go("/users")
+        # Check assigning existing home directory to a new user
+        m.execute("mkdir /home/existingdir")
+        createUser(
+            browser=b,
+            machine=m,
+            user_name="stealer",
+            real_name="Stealer OfHomeDirectison",
+            password=good_password,
+            locked=False,
+            custom_home_dir="/home/existingdir",
+            force_password_change=False,
+            verify_created=False,
+        )
+        b.wait_visible("#accounts-create-dialog")
+        b.wait_in_text("#accounts-create-user-home-dir-helper", "already exists")
+        b.wait_visible("button.apply:disabled")
+        self.assertEqual(m.execute("stat -c '%U %G' /home/existingdir").rstrip(), "root root")
+        b.click("button:contains('Create and change ownership of home directory')")
+        b.wait_not_present("#accounts-create-dialog")
+        b.wait_in_text("#accounts-list", "Stealer OfHomeDirectison")
+        # Verify that ownership of home directory was changed to the new user
+        self.assertEqual(m.execute("stat -c '%U %G' /home/existingdir").rstrip(), "stealer stealer")
 
-        # In fedora-core userdel for this user consistently fails
-        # userdel: user robert is currently used by process *
-        if m.image not in ["fedora-coreos", "rhel4edge"]:
-            performUserAction(b, 'robert', 'Delete account')
-            b.click("#account-confirm-delete-dialog footer button.pf-m-danger.apply")
-            b.wait_not_in_text('#accounts-list', "Robert Robertson")
+        default_shell = getUserAddDetails(m)["SHELL"]
+        custom_shell = "/bin/sh"
+        if default_shell == custom_shell:
+            custom_shell = "/bin/bash"
 
-        self.allow_journal_messages("Password quality check failed:")
-        self.allow_journal_messages("The password is a palindrome")
-        self.allow_journal_messages("passwd: user.*does not exist")
-        self.allow_journal_messages("passwd: Unknown user name '.*'.")
-        self.allow_journal_messages("lastlog: Unknown user or range: anton")
-        self.allow_journal_messages(".*required to change your password immediately.*")
-        self.allow_journal_messages(".*user account or password has expired.*")
-        # when sed'ing, there is a short time when the config file does not exist
-        self.allow_journal_messages(".*libuser initialization error: .*/etc/default/useradd.*: No such file or directory")
+        createUser(
+            browser=b,
+            machine=m,
+            user_name="robert",
+            real_name="Robert Robertson",
+            password=good_password,
+            locked=False,
+            custom_shell=custom_shell,
+            force_password_change=False,
+            verify_created=True,
+        )
+
+        b.go("#/robert")
+        b.wait_text("#account-shell", custom_shell)
 
     def testUnprivileged(self):
         m = self.machine
@@ -540,7 +920,7 @@ class TestAccounts(MachineCase):
         b.click('#account-set-password-dialog button.apply')
         b.wait_in_text("#account-set-password-dialog .pf-c-modal-box__body", "must wait longer")
 
-    @skipImage("ssh root login not allowed", "fedora-coreos", "rhel4edge")
+    @skipOstree("ssh root login not allowed")
     def testRootLogin(self):
         m = self.machine
         b = self.browser
@@ -682,7 +1062,7 @@ class TestAccounts(MachineCase):
         b.wait_in_text("#password-expiration-text", "Password must be changed")
         self.assertEqual(self.accountExpiryInfo("scruffy", "Password expires"), "password must be changed")
 
-    @skipImage("User is not shown as logged in when logged in through Cockpit", "fedora-coreos", "rhel4edge")
+    @skipOstree("User is not shown as logged in when logged in through Cockpit")
     def testAccountLogs(self):
         b = self.browser
         m = self.machine
@@ -751,7 +1131,7 @@ class TestAccounts(MachineCase):
         performGroupAction(b, 'testgroup0', 'Delete group')
         b.wait_text("#group-confirm-delete-dialog footer .pf-c-button.apply", "Delete")
         b.click("#group-confirm-delete-dialog footer .pf-c-button.apply")
-        b.wait_not_present('#account-confirm-delete-dialog')
+        b.wait_not_present('#group-confirm-delete-dialog')
         b.wait_visible("#groups-list")
         b.wait_not_in_text('#groups-list', "testgroup0")
 
@@ -764,10 +1144,11 @@ class TestAccounts(MachineCase):
         b.assert_pixels("#group-confirm-delete-dialog", "group-delete-dialog")
         b.click("#group-confirm-delete-dialog footer .pf-c-button.apply")
         b.wait_not_present('#account-confirm-delete-dialog')
+        b.wait(lambda: "#/" == b.eval_js('window.location.hash'))
         b.wait_visible("#groups-list")
         b.wait_not_in_text('#groups-list', "anton")
 
-        b.go("#/admin")
+        b.click('#accounts-list td[data-label="Username"] a[href="#/admin"]')
 
         # Existing groups appear in labels
         b.wait_in_text(".pf-c-label-group__list", "admin")
@@ -809,9 +1190,6 @@ class TestAccounts(MachineCase):
 
     def testGroupCreate(self):
         b = self.browser
-        m = self.machine
-        self.addCleanup(m.execute, "groupdel saturn || true")
-        self.addCleanup(m.execute, "groupdel titan || true")
 
         self.login_and_go("/users")
 
@@ -857,6 +1235,27 @@ class TestAccounts(MachineCase):
         b.click("#groups-create-dialog button.pf-m-primary")
         b.wait_not_present("#groups-create-dialog")
         b.wait_visible('#groups-list td[data-label="Group name"]:contains("saturn")')
+
+    def testGroupRename(self):
+        b = self.browser
+        m = self.machine
+
+        m.execute("groupadd titan; useradd uranus")
+
+        self.login_and_go("/users")
+        b.click("button:contains('more...')")
+        b.wait_visible('#groups-list td[data-label="Group name"]:contains("titan")')
+        b.click("#groups-list tbody tr:contains(titan) .pf-c-dropdown button")
+        b.click("#groups-list tbody tr:contains(titan) .pf-c-dropdown__menu li:contains('Rename group')")
+
+        b.set_input_text("#group-confirm-rename-dialog #group-name", "phoebe")
+        b.click("#group-confirm-rename-dialog .apply")
+        b.wait_not_present("#group-confirm-rename-dialog")
+        self.assertIn("phoebe", m.execute("getent group"))
+        self.assertNotIn("titan", m.execute("getent group"))
+
+        # Rename and delete actions are available only for user created groups
+        b.wait_not_present(f"#groups-list tbody tr:contains({m.get_admin_group()}) .pf-c-dropdown button")
 
 
 if __name__ == '__main__':

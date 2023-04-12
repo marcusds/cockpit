@@ -19,10 +19,10 @@
 import React from "react";
 import cockpit from 'cockpit';
 
-import { Button } from '@patternfly/react-core';
+import { Button } from "@patternfly/react-core/dist/esm/components/Button/index.js";
 
 import { fmt_to_fragments } from 'utils.jsx';
-import * as utils from './utils';
+import * as utils from './utils.js';
 import { v4 as uuidv4 } from 'uuid';
 
 import "./networking.scss";
@@ -34,7 +34,7 @@ const _ = cockpit.gettext;
 function show_error_dialog(title, message) {
     const props = {
         id: "error-popup",
-        title: title,
+        title,
         body: <p>{message}</p>
     };
 
@@ -343,7 +343,8 @@ export function NetworkManagerModel() {
         drop_object(path);
     }
 
-    let export_model_deferred = null;
+    let export_model_promise = null;
+    let export_model_promise_resolve = null;
 
     function export_model() {
         function doit() {
@@ -358,9 +359,10 @@ export function NetworkManagerModel() {
 
             self.ready = true;
             self.dispatchEvent('changed');
-            if (export_model_deferred) {
-                export_model_deferred.resolve();
-                export_model_deferred = null;
+            if (export_model_promise) {
+                export_model_promise_resolve();
+                export_model_promise = null;
+                export_model_promise_resolve = null;
             }
         }
 
@@ -372,11 +374,11 @@ export function NetworkManagerModel() {
 
     self.synchronize = function synchronize() {
         if (outstanding_refreshes === 0) {
-            return cockpit.resolve();
+            return Promise.resolve();
         } else {
-            if (!export_model_deferred)
-                export_model_deferred = cockpit.defer();
-            return export_model_deferred.promise();
+            if (!export_model_promise)
+                export_model_promise = new Promise(resolve => { export_model_promise_resolve = resolve });
+            return export_model_promise;
         }
     };
 
@@ -871,7 +873,7 @@ export function NetworkManagerModel() {
                                 set_settings(self, settings);
                             });
                 } catch (e) {
-                    return cockpit.reject(e);
+                    return Promise.reject(e);
                 }
             },
 
@@ -1006,7 +1008,7 @@ export function NetworkManagerModel() {
                                               settings_to_nm(settings), objpath(this), objpath(specific_object))
                             .then(([path, active_connection]) => active_connection);
                 } catch (e) {
-                    return cockpit.reject(e);
+                    return Promise.reject(e);
                 }
             },
 
@@ -1397,7 +1399,7 @@ export function settings_applier(model, device, connection) {
             return device.activate_with_settings(settings);
         } else {
             cockpit.warn("No way to apply settings", connection, settings);
-            return cockpit.resolve();
+            return Promise.resolve();
         }
     };
 }
@@ -1686,7 +1688,7 @@ export function set_member(model, group_connection, group_settings, member_type,
             if (member_settings.connection.group == group_settings.connection.uuid ||
                 member_settings.connection.group == group_settings.connection.id ||
                 member_settings.connection.group == group_iface)
-                return cockpit.resolve();
+                return Promise.resolve();
 
             member_settings.connection.member_type = member_type;
             member_settings.connection.group = group_iface;
@@ -1701,7 +1703,7 @@ export function set_member(model, group_connection, group_settings, member_type,
                                {
                                    autoconnect: true,
                                    interface_name: iface.Name,
-                                   member_type: member_type,
+                                   member_type,
                                    group: group_iface
                                }
             };

@@ -23,10 +23,8 @@ import {
     TableComposable, Thead, Tbody, Tr, Th, Td,
     SortByDirection,
 } from '@patternfly/react-table';
-import {
-    EmptyState, EmptyStateBody, EmptyStateSecondaryActions,
-    Text, TextContent, TextVariants,
-} from '@patternfly/react-core';
+import { EmptyState, EmptyStateBody, EmptyStateSecondaryActions } from "@patternfly/react-core/dist/esm/components/EmptyState/index.js";
+import { Text, TextContent, TextVariants } from "@patternfly/react-core/dist/esm/components/Text/index.js";
 
 import './cockpit-components-table.scss';
 
@@ -45,6 +43,7 @@ import './cockpit-components-table.scss';
                This property is mandatory and should contain a unique `key`, all additional properties are optional.
                Through extraProps the consumers can pass arbitrary properties to the <tr>
  *      expandedContent: (React.Node)[])
+ *      selected: boolean option if the row is selected
  *      initiallyExpanded : the entry will be initially rendered as expanded, but then behaves normally
  *   }[]
  * - emptyCaption: header caption to show if list is empty
@@ -58,6 +57,9 @@ import './cockpit-components-table.scss';
  * - sortMethod: callback function used for sorting rows. Called with 3 parameters: sortMethod(rows, activeSortDirection, activeSortIndex)
  * - style: object of additional css rules
  * - afterToggle: function to be called when content is toggled
+ * - onSelect: function to be called when a checkbox is clicked. Called with 5 parameters:
+ *   event, isSelected, rowIndex, rowData, extraData. rowData contains props with an id property of the clicked row.
+ * - onHeaderSelect: event, isSelected.
  */
 export const ListingTable = ({
     actions = [],
@@ -72,6 +74,7 @@ export const ListingTable = ({
     loading = '',
     onRowClick,
     onSelect,
+    onHeaderSelect,
     rows: tableRows = [],
     showHeader = true,
     sortBy,
@@ -82,9 +85,9 @@ export const ListingTable = ({
     const [expanded, setExpanded] = useState({});
     const [newItems, setNewItems] = useState([]);
     const [currentRowsKeys, setCurrentRowsKeys] = useState([]);
-    const [activeSortIndex, setActiveSortIndex] = useState(sortBy ? sortBy.index : 0);
-    const [activeSortDirection, setActiveSortDirection] = useState(sortBy ? sortBy.direction : SortByDirection.asc);
-    const rowKeys = rows.map(row => row.props ? row.props.key : undefined)
+    const [activeSortIndex, setActiveSortIndex] = useState(sortBy?.index ?? 0);
+    const [activeSortDirection, setActiveSortDirection] = useState(sortBy?.direction ?? SortByDirection.asc);
+    const rowKeys = rows.map(row => row.props?.key)
             .filter(key => key !== undefined);
     const rowKeysStr = JSON.stringify(rowKeys);
     const currentRowsKeysStr = JSON.stringify(currentRowsKeys);
@@ -213,13 +216,16 @@ export const ListingTable = ({
                             rowIndex,
                             onSelect,
                             isSelected: !!row.selected,
+                            props: {
+                                id: rowKey
+                            }
                         }} />
                     }
                     {row.columns.map((cell, cellIndex) => {
                         const { key, ...cellProps } = cell.props || {};
                         const dataLabel = typeof cells[cellIndex] == 'object' ? cells[cellIndex].title : cells[cellIndex];
                         const colKey = dataLabel || cellIndex;
-                        if (cells[cellIndex] && cells[cellIndex].header)
+                        if (cells[cellIndex]?.header)
                             return (
                                 <Th key={key || `row_${rowKey}_cell_${colKey}`} dataLabel={dataLabel} {...cellProps}>
                                     {typeof cell == 'object' ? cell.title : cell}
@@ -254,7 +260,11 @@ export const ListingTable = ({
                 {showHeader && <Thead>
                     <Tr>
                         {isExpandable && <Th />}
-                        {onSelect && <Th />}
+                        {!onHeaderSelect && onSelect && <Th />}
+                        {onHeaderSelect && onSelect && <Th select={{
+                            onSelect: onHeaderSelect,
+                            isSelected: rows.every(r => r.selected)
+                        }} />}
                         {cells.map((column, columnIndex) => {
                             const columnProps = column.props;
                             const sortParams = (

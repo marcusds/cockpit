@@ -17,19 +17,23 @@
  * along with Cockpit; If not, see <http://www.gnu.org/licenses/>.
  */
 import React, { useState } from 'react';
-import {
-    Card, CardBody, Button, CardTitle, Modal, Alert,
-    Form, FormGroup, List, ListItem, TextInput
-} from '@patternfly/react-core';
+import { Card, CardBody, CardTitle } from "@patternfly/react-core/dist/esm/components/Card/index.js";
+import { Button } from "@patternfly/react-core/dist/esm/components/Button/index.js";
+import { Modal } from "@patternfly/react-core/dist/esm/components/Modal/index.js";
+import { Alert } from "@patternfly/react-core/dist/esm/components/Alert/index.js";
+import { Form, FormGroup, FormHelperText } from "@patternfly/react-core/dist/esm/components/Form/index.js";
+import { HelperText, HelperTextItem, } from "@patternfly/react-core/dist/esm/components/HelperText/index.js";
+import { List, ListItem } from "@patternfly/react-core/dist/esm/components/List/index.js";
+import { TextInput } from "@patternfly/react-core/dist/esm/components/TextInput/index.js";
 
-import host_keys_script from "raw-loader!./ssh-list-host-keys.sh";
+import host_keys_script from "./ssh-list-host-keys.sh";
 import cockpit from "cockpit";
 import { superuser } from "superuser";
 import { useObject, useEvent } from "hooks.js";
 import { EmptyStatePanel } from "cockpit-components-empty-state.jsx";
 import { ServerTimeConfig } from 'serverTime.js';
 import { RealmdClient, RealmButton } from "./realmd.jsx";
-import { TunedPerformanceProfile } from '../../tuned/dialog.jsx';
+import { TunedPerformanceProfile } from './tuned-dialog.jsx';
 import { CryptoPolicyRow } from './cryptoPolicies.jsx';
 import { useDialogs } from "dialogs.jsx";
 import { useInit } from "hooks";
@@ -285,9 +289,19 @@ const PageSystemInformationChangeHostname = () => {
                     <TextInput id="sich-pretty-hostname" value={pretty} onChange={onPrettyChanged} />
                 </FormGroup>
                 <FormGroup fieldId="sich-hostname" label={_("Real host name")}
-                           helperTextInvalid={error.join("\n")}
-                           validated={error.length ? "error" : "default"}>
-                    <TextInput id="sich-hostname" value={hostname} onChange={onHostnameChanged} />
+                           validated={error.length ? "error" : "default"}
+                           helperTextInvalid={
+                               <FormHelperText isHidden={false} component="div">
+                                   <HelperText>
+                                       {error.map((err, i) =>
+                                           <HelperTextItem key={i} variant="error">
+                                               {err}
+                                           </HelperTextItem>
+                                       )}
+                                   </HelperText>
+                               </FormHelperText>
+                           }>
+                    <TextInput id="sich-hostname" value={hostname} onChange={onHostnameChanged} validated={error.length ? "error" : "default"} />
                 </FormGroup>
             </Form>
         </Modal>
